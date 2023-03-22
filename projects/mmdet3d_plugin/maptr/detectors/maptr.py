@@ -286,6 +286,13 @@ class MapTR(MVXTwoStageDetector):
             if not isinstance(var, list):
                 raise TypeError('{} must be a list, but got {}'.format(
                     name, type(var)))
+        
+        if not isinstance(img_metas[0], list):        # for Argo by shengyin
+            img_metas = [img_metas]
+        
+        if not isinstance(img, list):
+            img = [img]
+
         img = [img] if img is None else img
         points = [points] if points is None else points
         if img_metas[0][0]['scene_token'] != self.prev_frame_info['scene_token']:

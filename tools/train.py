@@ -28,7 +28,10 @@ from mmdet.apis import set_random_seed
 from mmseg import __version__ as mmseg_version
 
 from mmcv.utils import TORCH_VERSION, digit_version
+import wandb
+wandb_key='b2a21b14618d4bc67088a93b4c3300752257c6ae'    # shengyin
 
+wandb.login(key=wandb_key)
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
