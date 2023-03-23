@@ -50,7 +50,7 @@ model = dict(
     type='MapTR',
     use_grid_mask=True,
     video_test_mode=False,
-    # pretrained=dict(img='ckpts/resnet50-19c8e357.pth'),
+    pretrained=dict(img='ckpts/resnet50-19c8e357.pth'),
     img_backbone=dict(
         type='ResNet',
         depth=50,
@@ -233,13 +233,13 @@ test_pipeline = [
 
 
 data = dict(
-    samples_per_gpu=1,
-    workers_per_gpu=8,
+    samples_per_gpu=4,
+    workers_per_gpu=16,
     train=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file='/home/jiangshengyin/shengyin/data/train_annotations.json',
-        ann_file_s3='/home/jiangshengyin/openlanev2_av2_train_infos_v0.1.pkl',
+        ann_file='./data/train_annotations.json',
+        ann_file_s3='./data/openlanev2_av2_train_infos_v0.1.pkl',
         pipeline=train_pipeline,
         classes=class_names,
         modality=input_modality,
@@ -257,9 +257,9 @@ data = dict(
         box_type_3d='LiDAR'),
     val=dict(type=dataset_type,
              data_root=data_root,
-             ann_file='/home/jiangshengyin/shengyin/data/val_annotations.json',
+             ann_file='./data/val_annotations.json',
              map_ann_file=data_root + 'nuscenes_map_anns_val.json',
-            ann_file_s3='/home/jiangshengyin/openlanev2_av2_train_infos_v0.1.pkl',
+            ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
 
              pipeline=test_pipeline,  bev_size=(bev_h_, bev_w_),
              pc_range=point_cloud_range,
@@ -270,9 +270,9 @@ data = dict(
              classes=class_names, modality=input_modality, samples_per_gpu=1),
     test=dict(type=dataset_type,
               data_root=data_root,
-              ann_file='/home/jiangshengyin/shengyin/data/val_annotations.json',
+              ann_file='./data/val_annotations.json',
               map_ann_file=data_root + 'nuscenes_map_anns_val.json',
-            ann_file_s3='/home/jiangshengyin/openlanev2_av2_train_infos_v0.1.pkl',
+            ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
               pipeline=test_pipeline, bev_size=(bev_h_, bev_w_),
               pc_range=point_cloud_range,
               fixed_ptsnum_per_line=fixed_ptsnum_per_gt_line,
@@ -309,7 +309,7 @@ evaluation = dict(interval=24, pipeline=test_pipeline, metric='chamfer')
 runner = dict(type='EpochBasedRunner', max_epochs=total_epochs)
 
 log_config = dict(
-    interval=5,
+    interval=50,
     hooks=[
         dict(type='TextLoggerHook'),
         # dict(type='TensorboardLoggerHook'),
@@ -322,4 +322,6 @@ log_config = dict(
         ),
     ])
 fp16 = dict(loss_scale=512.)
-checkpoint_config = dict(interval=4)
+checkpoint_config = dict(interval=2)
+
+resume_from = None 

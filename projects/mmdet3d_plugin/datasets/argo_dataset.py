@@ -611,7 +611,7 @@ class AV2Dataset(CustomNuScenesDataset):
             return None
         frame_idx = input_dict['frame_idx']
         scene_token = input_dict['scene_token']
-
+       
         self.pre_pipeline(input_dict)
         example = self.pipeline(input_dict)
         data_queue.insert(0, example)
@@ -914,8 +914,7 @@ class AV2Dataset(CustomNuScenesDataset):
         """
         result_files, tmp_dir = self.format_results(results, jsonfile_prefix)
         self.evaluator = VectorEvaluate(self.ann_file)
-
-        result_dict = self.evaluator.evaluate(result_files['pts_bbox'], logger=logger)
+        results_dict = self.evaluator.evaluate(result_files['pts_bbox'], logger=logger)
 
         if tmp_dir is not None:
             tmp_dir.cleanup()
