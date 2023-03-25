@@ -585,6 +585,7 @@ class AV2Dataset(CustomNuScenesDataset):
         # data_infos = list(sorted(data_infos, key=lambda e: e['segment_id'] + '_' + e['timestamp']))
 
         data_infos = data_infos[::self.load_interval]
+        # data_infos = data_infos[:200]
         self.metadata = meta        # TODO: 届时需要修改
         # self.metadata = data['metadata']
         # self.version = self.metadata['version']
@@ -816,6 +817,123 @@ class AV2Dataset(CustomNuScenesDataset):
             return data
 
 
+
+    def draw(self, result, sample_id):
+        import cv2
+        def _imread( path):
+            from petrel_client.client import Client
+            client = Client("~/petreloss.conf") # 若不指定 conf_path ，则从 '~/petreloss.conf' 读取配置文件
+            img_bytes = client.get(path)
+            assert(img_bytes is not None)
+            img_mem_view = memoryview(img_bytes)
+            img_array = np.frombuffer(img_mem_view, np.uint8)
+            img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+            return img
+        
+        scene_data = self.data_infos[sample_id]
+        sample_s3 = self.data_infos_s3[sample_id]
+
+        COLOR_MAP_GT = {  
+            'ped_crossing': (255, 0, 0),
+            'divider': (0, 0, 255),
+            'boundary': (0, 255, 0),
+        }
+
+        COLOR_MAP_PRE = {  
+            'ped_crossing': (155, 0, 0),
+            'divider': (0, 0, 155),
+            'boundary': (0, 155, 0),
+        }
+
+        map_size=[-55, 55, -30, 30]
+        scale=10
+
+        draw_gt_dir = 'draw_gt'
+        path_dataroot = 's3://odl-flat/Argoverse2/Sensor_Dataset/sensor'
+        
+        for frame in scene_data:
+            sensor = scene_data['sensor']
+
+            for cam in sensor.keys():
+                path_img = self.data_infos_s3[sample_id]['sensor'][cam]['image_path'].replace(
+                        f"{self.data_infos_s3[sample_id]['segment_id']}/image", f"{self.data_infos_s3[sample_id]['meta_data']['source_id']}/sensors/cameras", 1)
+                
+                path_img = os.path.join(path_dataroot, path_img)
+                img = _imread(path_img)
+
+                intrinsic = np.array(scene_data['sensor'][cam]['intrinsic'])
+                extrinsic = np.array(scene_data['sensor'][cam]['extrinsic']) 
+
+                viewpad = np.eye(4)     
+                viewpad[:intrinsic.shape[0], :intrinsic.shape[1]] = intrinsic
+                ego2img = (viewpad @ extrinsic)
+
+
+                # for bev
+                bev_image_gt = np.zeros((int(scale*(map_size[1]-map_size[0])), int(scale*(map_size[3] - map_size[2])), 3), dtype=np.uint8)
+                bev_image_pred = np.zeros((int(scale*(map_size[1]-map_size[0])), int(scale*(map_size[3] - map_size[2])), 3), dtype=np.uint8)
+
+                for name, pts in scene_data['annotation'].items():
+
+                    # for img
+                    for line in pts:
+                        line = np.array(line)[:, :3]
+                        line[:, 2] = 0.0        # 这里强行赋值 z为0 
+                        xyz1 = np.concatenate([line, np.ones((line.shape[0], 1))], axis=1)
+                        xyz1 = xyz1 @ ego2img.T
+                        xyz1 = xyz1[xyz1[:, 2] > 1e-5]
+                        if xyz1.shape[0] == 0:
+                            continue
+                        points_2d = xyz1[:, :2] / xyz1[:, 2:3]
+                        # mask = (points_2d[:, 0] >= 0) & (points_2d[:, 0] < image.shape[1]) & (points_2d[:, 1] >= 0) & (points_2d[:, 1] < image.shape[0])
+                        points_2d = points_2d.astype(int)
+                            
+                        img = cv2.polylines(img, points_2d[None], False, COLOR_MAP_GT[name], 2)
+
+                    for vec, score, label in zip(result['vectors'], result['scores'], result['labels']):
+                        if score < 0.1:
+                            continue
+                        vec = np.concatenate([vec, np.zeros((vec.shape[0], 1))], axis=1)
+                        xyz1 = np.concatenate([vec, np.ones((vec.shape[0], 1))], axis=1)
+                        xyz1 = xyz1 @ ego2img.T
+                        xyz1 = xyz1[xyz1[:, 2] > 1e-5]
+                        if xyz1.shape[0] == 0:
+                            continue
+                        points_2d = xyz1[:, :2] / xyz1[:, 2:3]
+                        # mask = (points_2d[:, 0] >= 0) & (points_2d[:, 0] < image.shape[1]) & (points_2d[:, 1] >= 0) & (points_2d[:, 1] < image.shape[0])
+                        points_2d = points_2d.astype(int)
+                            
+                        img = cv2.polylines(img, points_2d[None], False, COLOR_MAP_PRE[list(COLOR_MAP_PRE.keys())[label]], 2) 
+
+
+            
+                    for lane in pts:
+                        draw_coor = (scale * (-np.array(lane)[:, :2] + np.array([map_size[1], map_size[3]]))).astype(np.int)
+                        bev_image_gt = cv2.polylines(bev_image_gt, [draw_coor[:, [1,0]]], False, COLOR_MAP_GT[name], max(round(scale * 0.2), 1))
+                        bev_image_gt = cv2.circle(bev_image_gt, (draw_coor[0, 1], draw_coor[0, 0]), max(2, round(scale * 0.5)), COLOR_MAP_GT[name], -1)
+                        bev_image_gt = cv2.circle(bev_image_gt, (draw_coor[-1, 1], draw_coor[-1, 0]), max(2, round(scale * 0.5)) , COLOR_MAP_GT[name], -1)
+
+
+                    for lane, score, label in zip(result['vectors'], result['scores'], result['labels']):
+                        if score < 0.1:
+                            continue
+                        draw_coor = (scale * (-np.array(lane)[:, :2] + np.array([map_size[1], map_size[3]]))).astype(np.int)
+                        bev_image_pred = cv2.polylines(bev_image_pred, [draw_coor[:, [1,0]]], False, COLOR_MAP_PRE[list(COLOR_MAP_PRE.keys())[label]], max(round(scale * 0.2), 1))
+                        bev_image_pred = cv2.circle(bev_image_pred, (draw_coor[0, 1], draw_coor[0, 0]), max(2, round(scale * 0.5)), COLOR_MAP_PRE[list(COLOR_MAP_PRE.keys())[label]], -1)
+                        bev_image_pred = cv2.circle(bev_image_pred, (draw_coor[-1, 1], draw_coor[-1, 0]), max(2, round(scale * 0.5)) , COLOR_MAP_PRE[list(COLOR_MAP_PRE.keys())[label]], -1)
+
+                    
+
+                mmcv.mkdir_or_exist(os.path.join(f'{draw_gt_dir}', f'{scene_data["segment_id"]}', f'{scene_data["timestamp"]}'))
+                cv2.imwrite(os.path.join(f'{draw_gt_dir}', f'{scene_data["segment_id"]}', f'{scene_data["timestamp"]}', f'{cam}.png'), img)
+                
+                bev_image_overlab = bev_image_gt + bev_image_pred
+                bev_image = np.concatenate([bev_image_pred, bev_image_overlab, bev_image_gt], axis=1)
+                cv2.imwrite(os.path.join(f'{draw_gt_dir}', f'{scene_data["segment_id"]}', f'{scene_data["timestamp"]}', f'bev.png'), bev_image)
+                
+
+
+
     def _format_bbox(self, results, jsonfile_prefix=None):
         """Convert the results to the standard format.
 
@@ -845,7 +963,7 @@ class AV2Dataset(CustomNuScenesDataset):
        
             sample_token = self.data_infos[sample_id]['timestamp']
             pred_annos[sample_token] = single_case
-
+            # self.draw(single_case, sample_id)
 
         nusc_submissions = {
             'meta': self.modality,
@@ -914,6 +1032,7 @@ class AV2Dataset(CustomNuScenesDataset):
         """
         result_files, tmp_dir = self.format_results(results, jsonfile_prefix)
         self.evaluator = VectorEvaluate(self.ann_file)
+        
         results_dict = self.evaluator.evaluate(result_files['pts_bbox'], logger=logger)
 
         if tmp_dir is not None:
