@@ -22,7 +22,6 @@ from mmdet3d.datasets.nuscenes_dataset import *
 from .nuscenes_dataset import CustomNuScenesDataset, NuScenesDataset
 from nuscenes.eval.common.utils import quaternion_yaw, Quaternion
 from nuscenes.map_expansion.map_api import NuScenesMap, NuScenesMapExplorer
-# MultiPolygon Shapely库中的MultiPolygon类只能表示不相交的多边形，不能表示相交或包含关系的多边形
 from shapely.geometry import LineString, box, MultiPolygon, MultiLineString, Polygon
 
 
@@ -990,14 +989,12 @@ class CustomAV2MapDataset(Dataset):
         lidar2ego = np.eye(4)
         lidar2ego[:3,:3] = Quaternion(matrix=np.array(input_dict['lidar2ego_rotation'])).rotation_matrix
         lidar2ego[:3, 3] = input_dict['lidar2ego_translation']
-        # print()
+
         ego2global = np.eye(4)
         ego2global[:3,:3] = Quaternion(matrix=np.array(input_dict['ego2global_rotation'])).rotation_matrix
         ego2global[:3, 3] = input_dict['ego2global_translation']
 
         lidar2global = ego2global @ lidar2ego
-        # print("lidar2global", lidar2global)
-        # print("ego2global", ego2global)
 
         lidar2global_translation = list(lidar2global[:3,3])
         lidar2global_rotation = list(Quaternion(matrix=lidar2global).q)
@@ -1253,7 +1250,7 @@ class CustomAV2MapDataset(Dataset):
             # input_dict["cam_extrinsics"] =  []
             for cam_type, cam_info in info["sensor"].items():
                 folder = self.map_ann_file.split("/")[-1].split("_")[0]
-                prefix = self.map_ann_file.split("/OpenLaneV2")[0] + "/OpenLaneV2"
+                prefix = self.map_ann_file.split("/OpenLaneV2")[0] + "/OpenLaneV2"  # hard code
                 # prefix = self.map_ann_file.split("/")[-1].split("_")[0]
                 prefix_path = os.path.join(prefix, folder)
                 image_paths.append(os.path.join(prefix_path, cam_info["image_path"]))
@@ -1309,29 +1306,23 @@ class CustomAV2MapDataset(Dataset):
                 intrinsic = intrinsic_project(resize_ratio, intrinsic) # TODO: hard code
                 viewpad = np.eye(4)
                 viewpad[:intrinsic.shape[0], :intrinsic.shape[1]] = intrinsic
-                # lidar2img_rt = (viewpad @ lidar2cam_rt_t)
                 lidar2img_rt = viewpad @ lidar2cam_rt
                 lidar2img_rts.append(lidar2img_rt)
 
                 cam_intrinsics.append(viewpad)
-                # lidar2cam_rts.append(lidar2cam_rt_t)
                 lidar2cam_rts.append(lidar2cam_rt)
 
                 # camera to ego transform
                 camera2ego = np.eye(4).astype(np.float32)
-                # print("lidar2cam_r: ", lidar2cam_r)
                 cam2lidar_r = np.linalg.inv(lidar2cam_r).T
-                # print("cam2lidar_r: ", cam2lidar_r, cam2lidar_r.dtype)
                 cam2lidar_t = -lidar2cam_t @ cam2lidar_r
-                # print("cam2lidar_t: ", cam2lidar_t)
                 camera2ego[:3, :3] = cam2lidar_r
                 camera2ego[:3, 3]  = cam2lidar_t
-                # print("camera2ego: ", camera2ego)
+
                 input_dict["camera2ego"].append(camera2ego)
 
                 # camera intrinsics
                 camera_intrinsics = np.eye(4).astype(np.float32)
-                # camera_intrinsics[:3, :3] = np.array(cam_info["intrinsic"])
                 camera_intrinsics[:3, :3] = intrinsic
                 input_dict["camera_intrinsics"].append(camera_intrinsics)
 
