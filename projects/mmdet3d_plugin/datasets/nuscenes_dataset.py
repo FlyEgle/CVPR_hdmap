@@ -38,36 +38,41 @@ class CustomNuScenesDataset(NuScenesDataset):
         """
         data_queue = []
 
-        # temporal aug
+        # temporal aug  # get the previous frame into the queue
         prev_indexs_list = list(range(index-self.queue_length, index))
         random.shuffle(prev_indexs_list)
         prev_indexs_list = sorted(prev_indexs_list[1:], reverse=True)
         ##
 
+        # load the data info from the anno file
         input_dict = self.get_data_info(index)
         if input_dict is None:
             return None
         frame_idx = input_dict['frame_idx']
         scene_token = input_dict['scene_token']
+        # pipeline data prepare
         self.pre_pipeline(input_dict)
+        # pipeline aug
         example = self.pipeline(input_dict)
-        if self.filter_empty_gt and \
-                (example is None or ~(example['gt_labels_3d']._data != -1).any()):
+        # not empty or label is not -1
+        if self.filter_empty_gt and (example is None or ~(example['gt_labels_3d']._data != -1).any()):
             return None
+        # queue add the aug example 
         data_queue.insert(0, example)
         for i in prev_indexs_list:
             i = max(0, i)
             input_dict = self.get_data_info(i)
             if input_dict is None:
                 return None
+            # previous frame idx
             if input_dict['frame_idx'] < frame_idx and input_dict['scene_token'] == scene_token:
                 self.pre_pipeline(input_dict)
                 example = self.pipeline(input_dict)
-                if self.filter_empty_gt and \
-                        (example is None or ~(example['gt_labels_3d']._data != -1).any()):
+                if self.filter_empty_gt and (example is None or ~(example['gt_labels_3d']._data != -1).any()):
                     return None
                 frame_idx = input_dict['frame_idx']
             data_queue.insert(0, copy.deepcopy(example))
+        
         return self.union2one(data_queue)
 
     def union2one(self, queue):
@@ -76,6 +81,7 @@ class CustomNuScenesDataset(NuScenesDataset):
         """
         imgs_list = [each['img'].data for each in queue]
         metas_map = {}
+        # ego pose & angle
         prev_pos = None
         prev_angle = None
         for i, each in enumerate(queue):
@@ -95,8 +101,7 @@ class CustomNuScenesDataset(NuScenesDataset):
                 prev_pos = copy.deepcopy(tmp_pos)
                 prev_angle = copy.deepcopy(tmp_angle)
 
-        queue[-1]['img'] = DC(torch.stack(imgs_list),
-                              cpu_only=False, stack=True)
+        queue[-1]['img'] = DC(torch.stack(imgs_list), cpu_only=False, stack=True)
         queue[-1]['img_metas'] = DC(metas_map, cpu_only=True)
         queue = queue[-1]
         return queue
@@ -171,6 +176,7 @@ class CustomNuScenesDataset(NuScenesDataset):
             annos = self.get_ann_info(index)
             input_dict['ann_info'] = annos
 
+        # ego pose & anchor
         rotation = Quaternion(input_dict['ego2global_rotation'])
         translation = input_dict['ego2global_translation']
         can_bus = input_dict['can_bus']
@@ -191,8 +197,8 @@ class CustomNuScenesDataset(NuScenesDataset):
         """
         if self.test_mode:
             return self.prepare_test_data(idx)
+        
         while True:
-
             data = self.prepare_train_data(idx)
             if data is None:
                 idx = self._rand_another(idx)

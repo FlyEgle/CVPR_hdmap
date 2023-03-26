@@ -12,9 +12,6 @@ plugin_dir = 'projects/mmdet3d_plugin/'
 point_cloud_range = [-15.0, -30.0, -2.0, 15.0, 30.0, 2.0]
 voxel_size = [0.15, 0.15, 4]
 
-
-
-
 img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 
@@ -190,8 +187,12 @@ model = dict(
                       weight=5),
             pc_range=point_cloud_range))))
 
-dataset_type = 'CustomNuScenesLocalMapDataset'
-data_root = 'data/nuscenes/'
+# dataset_type = 'CustomNuScenesLocalMapDataset'
+# ================================test ==================================
+dataset_type = "CustomAV2MapDataset"
+# data_root = 'data/nuscenes/'
+data_root = "/cpfs01/user/jiangmingchao/work/dataset/cvpr2023/OpenLaneV2"
+# data_root = "/cpfs01/user/jiangmingchao/work/code/BEVFormer/data/nuscenes/"
 file_client_args = dict(backend='disk')
 
 
@@ -230,11 +231,12 @@ test_pipeline = [
 
 data = dict(
     samples_per_gpu=4,
-    workers_per_gpu=4,
+    workers_per_gpu=8,
     train=dict(
         type=dataset_type,
         data_root=data_root,
         ann_file=data_root + 'nuscenes_infos_temporal_train.pkl',
+    
         pipeline=train_pipeline,
         classes=class_names,
         modality=input_modality,

@@ -12,16 +12,16 @@ plugin_dir = 'projects/mmdet3d_plugin/'
 point_cloud_range = [-15.0, -30.0, -2.0, 15.0, 30.0, 2.0]
 voxel_size = [0.15, 0.15, 4]
 
-
-
-
 img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 
 # For nuScenes we usually do 10-class detection
+# class_names = [
+#     'car', 'truck', 'construction_vehicle', 'bus', 'trailer', 'barrier',
+#     'motorcycle', 'bicycle', 'pedestrian', 'traffic_cone'
+# ]
 class_names = [
-    'car', 'truck', 'construction_vehicle', 'bus', 'trailer', 'barrier',
-    'motorcycle', 'bicycle', 'pedestrian', 'traffic_cone'
+    "divider", "ped_crossing", "boundary"
 ]
 # map has classes: divider, ped_crossing, boundary
 map_classes = ['divider', 'ped_crossing','boundary']
@@ -190,8 +190,12 @@ model = dict(
                       weight=5),
             pc_range=point_cloud_range))))
 
-dataset_type = 'CustomNuScenesLocalMapDataset'
-data_root = 'data/nuscenes/'
+# dataset_type = 'CustomNuScenesLocalMapDataset'
+# ================================test ==================================
+dataset_type = "CustomAV2MapDataset"
+# data_root = 'data/nuscenes/'
+data_root = "/cpfs01/user/jiangmingchao/work/dataset/cvpr2023/OpenLaneV2/"
+# data_root = "/cpfs01/user/jiangmingchao/work/code/BEVFormer/data/nuscenes/"
 file_client_args = dict(backend='disk')
 
 
@@ -199,8 +203,8 @@ train_pipeline = [
     dict(type='LoadMultiViewImageFromFiles', to_float32=True),
     dict(type='PhotoMetricDistortionMultiViewImage'),
     dict(type='LoadAnnotations3D', with_bbox_3d=True, with_label_3d=True, with_attr_label=False),
-    dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
-    dict(type='ObjectNameFilter', classes=class_names),
+    # dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
+    # dict(type='ObjectNameFilter', classes=class_names),
     dict(type='NormalizeMultiviewImage', **img_norm_cfg),
     dict(type='RandomScaleImageMultiViewImage', scales=[0.5]),
     dict(type='PadMultiViewImage', size_divisor=32),
@@ -229,12 +233,13 @@ test_pipeline = [
 ]
 
 data = dict(
-    samples_per_gpu=4,
+    samples_per_gpu=8,
     workers_per_gpu=8,
     train=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + 'nuscenes_infos_temporal_train.pkl',
+        # ann_file=data_root + 'nuscenes_infos_temporal_train.pkl',
+        map_ann_file = data_root + "train_annotations.json",
         pipeline=train_pipeline,
         classes=class_names,
         modality=input_modality,
@@ -252,8 +257,8 @@ data = dict(
         box_type_3d='LiDAR'),
     val=dict(type=dataset_type,
              data_root=data_root,
-             ann_file=data_root + 'nuscenes_infos_temporal_val.pkl',
-             map_ann_file=data_root + 'nuscenes_map_anns_val.json',
+             map_ann_file=data_root + 'val_annotations.json',
+            #  map_ann_file=data_root + 'nuscenes_map_anns_val.json',
              pipeline=test_pipeline,  bev_size=(bev_h_, bev_w_),
              pc_range=point_cloud_range,
              fixed_ptsnum_per_line=fixed_ptsnum_per_gt_line,
@@ -263,8 +268,8 @@ data = dict(
              classes=class_names, modality=input_modality, samples_per_gpu=1),
     test=dict(type=dataset_type,
               data_root=data_root,
-              ann_file=data_root + 'nuscenes_infos_temporal_val.pkl',
-              map_ann_file=data_root + 'nuscenes_map_anns_val.json',
+              map_ann_file=data_root + 'test_annotations.json',
+            #   map_ann_file=data_root + 'nuscenes_map_anns_val.json',
               pipeline=test_pipeline, bev_size=(bev_h_, bev_w_),
               pc_range=point_cloud_range,
               fixed_ptsnum_per_line=fixed_ptsnum_per_gt_line,
@@ -278,7 +283,8 @@ data = dict(
 
 optimizer = dict(
     type='AdamW',
-    lr=6e-4,
+    # lr=6e-4,
+    lr=1.5e-4,
     paramwise_cfg=dict(
         custom_keys={
             'img_backbone': dict(lr_mult=0.1),
@@ -293,10 +299,11 @@ lr_config = dict(
     warmup_iters=500,
     warmup_ratio=1.0 / 3,
     min_lr_ratio=1e-3)
-# total_epochs = 110
+
 total_epochs = 24
+# total_epochs = 50
 # evaluation = dict(interval=1, pipeline=test_pipeline)
-evaluation = dict(interval=2, pipeline=test_pipeline, metric='chamfer')
+evaluation = dict(interval=1, pipeline=test_pipeline, metric='chamfer')
 
 runner = dict(type='EpochBasedRunner', max_epochs=total_epochs)
 
@@ -307,4 +314,4 @@ log_config = dict(
         dict(type='TensorboardLoggerHook')
     ])
 fp16 = dict(loss_scale=512.)
-checkpoint_config = dict(interval=5)
+checkpoint_config = dict(interval=1)

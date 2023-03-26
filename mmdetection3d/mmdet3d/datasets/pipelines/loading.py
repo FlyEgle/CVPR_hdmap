@@ -44,8 +44,13 @@ class LoadMultiViewImageFromFiles(object):
         """
         filename = results['img_filename']
         # img is of shape (h, w, c, num_views)
+        # TODO: crop or resize to same size
+
         img = np.stack(
-            [mmcv.imread(name, self.color_type) for name in filename], axis=-1)
+            [mmcv.imresize(mmcv.imread(name, self.color_type), size=(1600, 900)) for name in filename], axis=-1)
+
+        # img = np.stack(
+        #     [mmcv.imread(name, self.color_type) for name in filename], axis=-1)
 
         if self.to_float32:
             img = img.astype(np.float32)

@@ -1,7 +1,14 @@
+'''
+Descripttion: 
+Author: jiangmingchao
+version: 
+Date: 2023-03-22 17:23:13
+'''
 from .nuscenes_dataset import CustomNuScenesDataset
 from .builder import custom_build_dataset
 
 from .nuscenes_map_dataset import CustomNuScenesLocalMapDataset
+from .av2_dataset import CustomAV2MapDataset
 __all__ = [
-    'CustomNuScenesDataset','CustomNuScenesLocalMapDataset'
+    'CustomNuScenesDataset','CustomNuScenesLocalMapDataset', 'CustomAV2MapDataset'
 ]

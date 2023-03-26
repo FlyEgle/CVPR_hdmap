@@ -194,6 +194,7 @@ model = dict(
 
 dataset_type = 'CustomNuScenesLocalMapDataset'
 data_root = 'data/nuscenes/'
+# # data_root = "/cpfs01/user/jiangmingchao/work/code/BEVFormer/data/nuscenes/"
 file_client_args = dict(backend='disk')
 
 
@@ -231,8 +232,8 @@ test_pipeline = [
 ]
 
 data = dict(
-    samples_per_gpu=24,
-    workers_per_gpu=4,
+    samples_per_gpu=32,
+    workers_per_gpu=8,
     train=dict(
         type=dataset_type,
         data_root=data_root,

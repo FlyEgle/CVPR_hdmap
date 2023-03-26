@@ -254,6 +254,8 @@ class MapTRNMSFreeCoder(BaseBBoxCoder):
                 'pts': pts,
             }
 
+            # print("predict_dict: ", predictions_dict)
+
         else:
             raise NotImplementedError(
                 'Need to reorganize output as a batch, only '
