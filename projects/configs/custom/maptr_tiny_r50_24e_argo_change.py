@@ -306,7 +306,7 @@ lr_config = dict(
 total_epochs = 24
 # total_epochs = 50
 # evaluation = dict(interval=1, pipeline=test_pipeline)
-evaluation = dict(interval=24, pipeline=test_pipeline, metric='chamfer')
+evaluation = dict(interval=2, pipeline=test_pipeline, metric='chamfer')
 
 runner = dict(type='EpochBasedRunner', max_epochs=total_epochs)
 
@@ -315,13 +315,13 @@ log_config = dict(
     hooks=[
         dict(type='TextLoggerHook'),
         # dict(type='TensorboardLoggerHook'),
-        # dict(
-        #     type='WandbLoggerHook', 
-        #     init_kwargs=dict(
-        #         project='For test',
-        #         entity='cvpr_hdmap',
-        #         name='Adaptation_maptr_for_argo')
-        # ),
+        dict(
+            type='WandbLoggerHook', 
+            init_kwargs=dict(
+                project='For test',
+                entity='cvpr_hdmap',
+                name='Adaptation_maptr_for_argo_fixAxis')
+        ),
     ])
 fp16 = dict(loss_scale=512.)
 checkpoint_config = dict(interval=2)

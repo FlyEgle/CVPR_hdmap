@@ -585,7 +585,7 @@ class AV2Dataset(CustomNuScenesDataset):
         # data_infos = list(sorted(data_infos, key=lambda e: e['segment_id'] + '_' + e['timestamp']))
 
         data_infos = data_infos[::self.load_interval]
-        # data_infos = data_infos[:200]
+        data_infos = data_infos[:200]
         self.metadata = meta        # TODO: 届时需要修改
         # self.metadata = data['metadata']
         # self.version = self.metadata['version']
@@ -1032,7 +1032,22 @@ class AV2Dataset(CustomNuScenesDataset):
         """
         result_files, tmp_dir = self.format_results(results, jsonfile_prefix)
         self.evaluator = VectorEvaluate(self.ann_file)
-        
+        submisson_vector = result_files['pts_bbox']
+        submisson_vector['meta'] = {
+                'use_lidar': False,
+                'use_camera': True,
+                "use_external": False,                     
+                "output_format": "vector",                  
+                'use_external': False,
+
+                # NOTE: please fill the information below
+                'method': 'maptr',                            
+                'authors': 'JiangShengyin',                          
+                'e-mail': 'shengyin@bupt.edu.cn',                            
+                'institution / company': 'bupt',         
+                'country / region': 'china',                  
+        }
+        mmcv.dump(submisson_vector, 'submisson_vector.json')
         results_dict = self.evaluator.evaluate(result_files['pts_bbox'], logger=logger)
 
         if tmp_dir is not None:
