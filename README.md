@@ -14,8 +14,15 @@ make the image & annotations follow below format
 
 ## Train
 ```bash
-cd CVPR_HEMAP;
+cd CVPR_HDMAP;
 zsh tools/dist_train.sh projects/configs/maptr/maptr_tiny_r50_24e_1gpus_av2_resize_intrinsic.py ngpus
+```
+
+## Vis
+```bash
+cd CVPR_HDMAP;
+export PYTHONPATH=CVPR_HDMAP
+python tools/maptr/vis_pred_av2.py config_path ckpt_path
 ```
 
 ## Note
