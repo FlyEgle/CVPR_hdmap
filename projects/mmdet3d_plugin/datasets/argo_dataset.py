@@ -489,6 +489,7 @@ class LiDARInstanceLines(object):
 
 
 
+
 @DATASETS.register_module()
 class AV2Dataset(CustomNuScenesDataset):
     r"""NuScenes Dataset.
@@ -585,7 +586,7 @@ class AV2Dataset(CustomNuScenesDataset):
         # data_infos = list(sorted(data_infos, key=lambda e: e['segment_id'] + '_' + e['timestamp']))
 
         data_infos = data_infos[::self.load_interval]
-        data_infos = data_infos[:200]
+        # data_infos = data_infos[:200]
         self.metadata = meta        # TODO: 届时需要修改
         # self.metadata = data['metadata']
         # self.version = self.metadata['version']
@@ -765,19 +766,20 @@ class AV2Dataset(CustomNuScenesDataset):
         info = self.data_infos[index]
         ann_info = info['annotation']
         
-        gt_labels = []
-        gt_instance = []
+        gt_labels_list = []
+        gt_instance_list = []
 
         for k, v in ann_info.items():
             if k in self.cat2id.keys():
                 for l in v:
-                    gt_labels.append(self.cat2id[k])
-                    gt_instance.append(LineString(np.array(l)[:, :2]))      # line with xy
-
-        gt_instance = LiDARInstanceLines(gt_instance,self.sample_dist,
+                    # gt_labels.append(self.cat2id[k])
+                    instance_list = self._one_type_line_geom_to_instances(LineString(np.array(l)[:, :2]))      # line with xy
+                    gt_labels_list.extend([self.cat2id[k] for _ in range(len(instance_list))])
+                    gt_instance_list.extend(instance_list)
+        gt_instance = LiDARInstanceLines(gt_instance_list,self.sample_dist,
                         self.num_samples, self.padding, self.fixed_num,self.padding_value, patch_size=self.patch_size)
 
-        gt_labels = to_tensor(gt_labels)
+        gt_labels = to_tensor(gt_labels_list)
 
         anns_results = dict(
             gt_vecs_pts_loc=gt_instance,
@@ -786,6 +788,21 @@ class AV2Dataset(CustomNuScenesDataset):
         )
         return anns_results
     
+
+    def _one_type_line_geom_to_instances(self, line_geom):
+        line_instances = []
+
+        if not line_geom.is_empty:
+            if line_geom.geom_type == 'MultiLineString':
+                for single_line in line_geom.geoms:
+                    line_instances.append(single_line)
+            elif line_geom.geom_type == 'LineString':
+                line_instances.append(line_geom)
+            else:
+                raise NotImplementedError
+        return line_instances
+
+
 
     def prepare_test_data(self, index):
         """Prepare data for testing.

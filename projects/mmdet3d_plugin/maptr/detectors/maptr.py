@@ -273,7 +273,6 @@ class MapTR(MVXTwoStageDetector):
 
         img_metas = [each[len_queue-1] for each in img_metas]
         img_feats = self.extract_feat(img=img, img_metas=img_metas)
-        import pdb; pdb.set_trace()
         losses = dict()
         losses_pts = self.forward_pts_train(img_feats, lidar_feat, gt_bboxes_3d,
                                             gt_labels_3d, img_metas,

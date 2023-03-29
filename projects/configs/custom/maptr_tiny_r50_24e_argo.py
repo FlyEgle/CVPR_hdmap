@@ -9,7 +9,8 @@ plugin_dir = 'projects/mmdet3d_plugin/'
 # If point cloud range is changed, the models should also change their point
 # cloud range accordingly
 # point_cloud_range = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0]
-point_cloud_range = [-15.0, -30.0, -2.0, 15.0, 30.0, 2.0]
+# point_cloud_range = [-15.0, -30.0, -2.0, 15.0, 30.0, 2.0]
+point_cloud_range = [-30.0, -15.0, -2.0, 30.0, 15.0, 2.0]
 voxel_size = [0.15, 0.15, 4]
 
 
@@ -18,10 +19,10 @@ img_norm_cfg = dict(
 
 # For nuScenes we usually do 10-class detection
 class_names = [
-    'divider', 'ped_crossing','boundary'
+    'ped_crossing', 'divider','boundary'
 ]
 # map has classes: divider, ped_crossing, boundary
-map_classes = ['divider', 'ped_crossing','boundary']
+map_classes = ['ped_crossing', 'divider','boundary']
 # fixed_ptsnum_per_line = 20
 # map_classes = ['divider',]
 fixed_ptsnum_per_gt_line = 20 # now only support fixed_pts > 0
@@ -42,8 +43,8 @@ _ffn_dim_ = _dim_*2
 _num_levels_ = 1
 # bev_h_ = 50
 # bev_w_ = 50
-bev_h_ = 200
-bev_w_ = 100
+bev_h_ = 100
+bev_w_ = 200
 queue_length = 1 # each sequence contains `queue_length` frames.
 
 model = dict(
@@ -150,7 +151,8 @@ model = dict(
         bbox_coder=dict(
             type='MapTRNMSFreeCoder',
             # post_center_range=[-61.2, -61.2, -10.0, 61.2, 61.2, 10.0],
-            post_center_range=[-20, -35, -20, -35, 20, 35, 20, 35],
+            # post_center_range=[-20, -35, -20, -35, 20, 35, 20, 35],
+            post_center_range=[-35, -20, -35, -20, 35, 20, 35, 20],
             pc_range=point_cloud_range,
             max_num=50,
             voxel_size=voxel_size,
@@ -202,6 +204,7 @@ train_pipeline = [
     dict(type='NormalizeMultiviewImage', **img_norm_cfg),
     dict(type='CropFrontViewImageForArgo'),
     dict(type='RandomScaleImageMultiViewImageArgo', scales=[0.5]),
+    # dict(type='GenerateUVSegmentationForArgo', thickness=10), 
     dict(type='PadMultiViewImageForArgo', size_divisor=32),
     dict(type='ArgoFormatBundle3D', class_names=class_names),
     dict(type='CustomCollect3D', keys=['gt_bboxes_3d', 'gt_labels_3d', 'img'], 
@@ -233,7 +236,7 @@ test_pipeline = [
 
 
 data = dict(
-    samples_per_gpu=4,
+    samples_per_gpu=6,
     workers_per_gpu=16,
     train=dict(
         type=dataset_type,
@@ -304,7 +307,7 @@ lr_config = dict(
 total_epochs = 24
 # total_epochs = 50
 # evaluation = dict(interval=1, pipeline=test_pipeline)
-evaluation = dict(interval=24, pipeline=test_pipeline, metric='chamfer')
+evaluation = dict(interval=2, pipeline=test_pipeline, metric='chamfer')
 
 runner = dict(type='EpochBasedRunner', max_epochs=total_epochs)
 
@@ -313,13 +316,13 @@ log_config = dict(
     hooks=[
         dict(type='TextLoggerHook'),
         # dict(type='TensorboardLoggerHook'),
-        dict(
-            type='WandbLoggerHook', 
-            init_kwargs=dict(
-                project='For test',
-                entity='cvpr_hdmap',
-                name='Adaptation_maptr_for_argo')
-        ),
+        # dict(
+        #     type='WandbLoggerHook', 
+        #     init_kwargs=dict(
+        #         project='For test',
+        #         entity='cvpr_hdmap',
+        #         name='Adaptation_maptr_for_argo_fixAxis')
+        # ),
     ])
 fp16 = dict(loss_scale=512.)
 checkpoint_config = dict(interval=2)
