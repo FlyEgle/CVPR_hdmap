@@ -261,7 +261,7 @@ class MapTR(MVXTwoStageDetector):
         lidar_feat = None
         if self.modality == 'fusion':
             lidar_feat = self.extract_lidar_feat(points)
-        
+
         len_queue = img.size(1)
         prev_img = img[:, :-1, ...]
         img = img[:, -1, ...]
@@ -273,6 +273,7 @@ class MapTR(MVXTwoStageDetector):
 
         img_metas = [each[len_queue-1] for each in img_metas]
         img_feats = self.extract_feat(img=img, img_metas=img_metas)
+        import pdb; pdb.set_trace()
         losses = dict()
         losses_pts = self.forward_pts_train(img_feats, lidar_feat, gt_bboxes_3d,
                                             gt_labels_3d, img_metas,

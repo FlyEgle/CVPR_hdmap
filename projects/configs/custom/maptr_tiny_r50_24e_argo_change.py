@@ -235,7 +235,7 @@ test_pipeline = [
 
 
 data = dict(
-    samples_per_gpu=4,
+    samples_per_gpu=1,
     workers_per_gpu=16,
     train=dict(
         type=dataset_type,
@@ -315,13 +315,13 @@ log_config = dict(
     hooks=[
         dict(type='TextLoggerHook'),
         # dict(type='TensorboardLoggerHook'),
-        dict(
-            type='WandbLoggerHook', 
-            init_kwargs=dict(
-                project='For test',
-                entity='cvpr_hdmap',
-                name='Adaptation_maptr_for_argo_fixAxis')
-        ),
+        # dict(
+        #     type='WandbLoggerHook', 
+        #     init_kwargs=dict(
+        #         project='For test',
+        #         entity='cvpr_hdmap',
+        #         name='Adaptation_maptr_for_argo_fixAxis')
+        # ),
     ])
 fp16 = dict(loss_scale=512.)
 checkpoint_config = dict(interval=2)
