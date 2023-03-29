@@ -70,7 +70,7 @@ class Mlp(nn.Module):
                  out_features=None,
                  act_layer=nn.ReLU,
                  drop=0.0):
-        super().__init__()
+        super(Mlp, self).__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
         self.fc1 = nn.Linear(in_features, hidden_features)
@@ -92,7 +92,7 @@ class Mlp(nn.Module):
 class SELayer(nn.Module):
 
     def __init__(self, channels, act_layer=nn.ReLU, gate_layer=nn.Sigmoid):
-        super().__init__()
+        super(SELayer, self).__init__()
         self.conv_reduce = nn.Conv2d(channels, channels, 1, bias=True)
         self.act1 = act_layer()
         self.conv_expand = nn.Conv2d(channels, channels, 1, bias=True)
@@ -125,7 +125,7 @@ class uvSegmentationsAux_layer(nn.Module):
                 in_channels,
                 kernel_size=3,
                 stride=1,
-                padding=0),
+                padding=1),
             # build_conv_layer(         # NOTE: 由于 mmcv 版本的问题，这里DCN还不支持
             #         cfg=dict(
             #             type='DCN',
@@ -141,8 +141,9 @@ class uvSegmentationsAux_layer(nn.Module):
     # @auto_fp16()
     def forward(self, x, mlp_input):
         mlp_input = self.bn(mlp_input.reshape(-1, mlp_input.shape[-1] *mlp_input.shape[-1]))
-        import pdb; pdb.set_trace()        
-        x = x.to(torch.FloatTensor)
+        # import pdb; pdb.set_trace()        
+        # x = x.to(torch.FloatTensor)
+  
         x = self.reduce_conv(x)
 
         context_se = self.context_mlp(mlp_input)[..., None, None]
@@ -217,6 +218,15 @@ class uvSegmentationsAuxHead(nn.Module):
         self.outconv = nn.Conv2d(len(scales), 1, 1)
     
 
+    def get_uvsegmentations_gt(self, gt_vecs_list, lidar2imgs, img_shape):
+        device = lidar2imgs[0].device
+        gt_pts_list = [
+            gt_bboxes.gt_pts_list.to(device) for gt_bboxes in gt_vecs_list]
+
+        
+
+
+
 
     # @auto_fp16()
     def forward(self, inputs, lidar2imgs=None):
@@ -224,7 +234,7 @@ class uvSegmentationsAuxHead(nn.Module):
         out_list = []
         for i in range(len(inputs)):
             # stage
-            import pdb; pdb.set_trace()
+            
             input = self.strengModule[i](inputs[i], lidar2imgs)
             # input = inputs[i]
             stage_out = self.headModule[i](input)
@@ -233,6 +243,7 @@ class uvSegmentationsAuxHead(nn.Module):
             out_list.append(out)
         
         # ((B*T), C, H, W)
+        import pdb; pdb.set_trace()
         outcat = torch.cat(out_list, dim=1)
         out = self.outconv(outcat)
 
@@ -284,20 +295,23 @@ class AuxBEVSegmentationHead(nn.Module):
             return torch.sigmoid(x)
 
 
+
+
+
 if __name__ == "__main__":
     model = uvSegmentationsAuxHead()
     # model = upConvModule(3,3)
-    model = model.cuda()
-    print(model)
+    model = model
+    # print(model)
     inputs = [
-        torch.randn(7, 256, 8, 22).cuda(),
-        torch.randn(7, 256, 16, 44).cuda(),
-        torch.randn(7, 256, 32, 88).cuda()
+        torch.randn(7, 256, 8, 22),
+        torch.randn(7, 256, 16, 44),
+        torch.randn(7, 256, 32, 88)
     ]
     # inputs = torch.randn(1,3,32,32).cuda()
-    with autocast():
-        lidar2imgs = torch.zeros((7, 4, 4))
-        out = model(inputs, lidar2imgs)
+    # with autocast():
+    lidar2imgs = torch.zeros((7, 4, 4))
+    out = model(inputs, lidar2imgs)
     print(inputs[0].dtype)
     print(out.dtype)
     

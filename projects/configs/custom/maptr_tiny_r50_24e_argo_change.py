@@ -204,6 +204,7 @@ train_pipeline = [
     dict(type='NormalizeMultiviewImage', **img_norm_cfg),
     dict(type='CropFrontViewImageForArgo'),
     dict(type='RandomScaleImageMultiViewImageArgo', scales=[0.5]),
+    dict(type='GenerateUVSegmentationForArgo', thickness=10), 
     dict(type='PadMultiViewImageForArgo', size_divisor=32),
     dict(type='ArgoFormatBundle3D', class_names=class_names),
     dict(type='CustomCollect3D', keys=['gt_bboxes_3d', 'gt_labels_3d', 'img'], 
@@ -236,7 +237,7 @@ test_pipeline = [
 
 data = dict(
     samples_per_gpu=1,
-    workers_per_gpu=16,
+    workers_per_gpu=0,
     train=dict(
         type=dataset_type,
         data_root=data_root,

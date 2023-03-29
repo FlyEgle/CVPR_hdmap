@@ -3,7 +3,8 @@ from numpy import random
 import mmcv
 from mmdet.datasets.builder import PIPELINES
 from mmcv.parallel import DataContainer as DC
-
+import cv2
+import os
 
 
 @PIPELINES.register_module()
@@ -106,7 +107,7 @@ class PadMultiViewImageForArgo(object):
         results['pad_size_divisor'] = self.size_divisor
        
 
-        # 可视化 gt
+        # # 可视化 gt
         # import cv2
         # for index, img in enumerate(results['img']):
         #     img = np.uint8(img)
@@ -115,6 +116,7 @@ class PadMultiViewImageForArgo(object):
 
         #     for instance in results['gt_bboxes_3d'].instance_list:
         #         instance = np.array(instance.coords)
+        #         instance = np.concatenate([instance, np.zeros((instance.shape[0], 1))], axis=1)
         #         instance = np.concatenate([instance, np.ones((instance.shape[0], 1))], axis=1)
         #         instance = instance @ lidar2img.T
         #         instance = instance[instance[:, 2] > 1e-5]
@@ -129,9 +131,6 @@ class PadMultiViewImageForArgo(object):
         #     mmcv.mkdir_or_exist('instance_draw')
         #     import os
         #     cv2.imwrite(os.path.join('instance_draw', f'{index}.png'), img)
-
-        # import pdb; pdb.set_trace()
-        # a = 0
 
 
     def __call__(self, results):
@@ -149,3 +148,62 @@ class PadMultiViewImageForArgo(object):
         repr_str += f'size_divisor={self.size_divisor}, '
         repr_str += f'pad_val={self.pad_val})'
         return repr_str
+
+
+
+@PIPELINES.register_module()
+class GenerateUVSegmentationForArgo(object):
+
+    def __init__(self, thickness=10):
+        self.thickness = thickness
+
+    def _generate_uvsegmentation(self, results):
+        """generate uvsegmentation."""
+        gt_uvsegmentations = []
+
+        for img in results['img']:
+            gt_uvsegmentation = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
+
+
+        for index, img in enumerate(results['img']):
+            gt_uvsegmentation = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
+            lidar2img = results['ego2img'][index]
+
+            for instance in results['gt_bboxes_3d'].instance_list:
+                instance = np.array(instance.coords)
+                instance = np.concatenate([instance, np.zeros((instance.shape[0], 1))], axis=1) 
+                instance = np.concatenate([instance, np.ones((instance.shape[0], 1))], axis=1)
+               
+                instance = instance @ lidar2img.T
+                instance = instance[instance[:, 2] > 1e-5]
+                points_2d = instance[:, :2] / instance[:, 2:3]
+                points_2d = points_2d.astype(int)
+                
+                gt_uvsegmentation = cv2.polylines(gt_uvsegmentation, points_2d[None], False, (255, 255, 255), thickness=self.thickness)
+        
+            gt_uvsegmentations.append(gt_uvsegmentation)
+            
+            # # 可视化 gt_uvsegmentation 
+            # CAM_TYPE = ['ring_front_center', 'ring_front_left', 'ring_front_right', 'ring_rear_left', 'ring_rear_right', 'ring_side_left', 'ring_side_right']
+            # dir = f"../gt_uvsegmentations/{results['scene_token']}/{results['sample_idx']}"
+            # mmcv.mkdir_or_exist(dir)
+            # cv2.imwrite(os.path.join(dir, f"{CAM_TYPE[index]}.png" ), gt_uvsegmentation)
+
+
+        results['gt_uvsegmentations'] = gt_uvsegmentations
+       
+    def __call__(self, results):
+        """Call function to generate uvsegmentation gt for aux-head-loss.
+        Args:
+            results (dict): Result dict from loading pipeline.
+        Returns:
+            dict: Updated result dict.
+        """
+        self._generate_uvsegmentation(results)
+        return results
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__
+        repr_str += f'thickness={self.thickness}, '
+        return repr_str
+
