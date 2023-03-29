@@ -1059,7 +1059,7 @@ class AV2Dataset(CustomNuScenesDataset):
 
                 # NOTE: please fill the information below
                 'method': 'maptr',                            
-                'authors': 'JiangShengyin',                          
+                'authors': ['JiangShengyin'],                          
                 'e-mail': 'shengyin@bupt.edu.cn',                            
                 'institution / company': 'bupt',         
                 'country / region': 'china',                  
