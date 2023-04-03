@@ -141,3 +141,9 @@ dmypy.json
 .pyre/
 
 cluster.sh
+
+
+wandb/
+
+nohup.out
+draw_gt/

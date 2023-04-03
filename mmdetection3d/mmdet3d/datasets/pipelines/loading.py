@@ -45,9 +45,11 @@ class LoadMultiViewImageFromFiles(object):
         filename = results['img_filename']
         # img is of shape (h, w, c, num_views)
         # TODO: crop or resize to same size
-
-        img = np.stack(
-            [mmcv.imresize(mmcv.imread(name, self.color_type), size=(1600, 900)) for name in filename], axis=-1)
+        if 's3' in filename[0]:
+            img = np.stack([mmcv.imresize(self._imread(name), size=(2048, 1550)) for name in filename], axis=-1)
+        else:
+            img = np.stack(
+                [mmcv.imresize(mmcv.imread(name, self.color_type), size=(2048, 1550)) for name in filename], axis=-1)
 
         # img = np.stack(
         #     [mmcv.imread(name, self.color_type) for name in filename], axis=-1)
@@ -69,6 +71,22 @@ class LoadMultiViewImageFromFiles(object):
             std=np.ones(num_channels, dtype=np.float32),
             to_rgb=False)
         return results
+    
+    def _imread(self, path):
+        from petrel_client.client import Client
+        
+        client = Client("~/petreloss.conf") # 若不指定 conf_path ，则从 '~/petreloss.conf' 读取配置文件
+        img_bytes = client.get(path)
+        assert(img_bytes is not None)
+        img_mem_view = memoryview(img_bytes)
+        img_array = np.frombuffer(img_mem_view, np.uint8)
+        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+        # import os
+        # mmcv.mkdir_or_exist(path.split('/')[-5])
+        # cv2.imwrite(os.path.join(path.split('/')[-5], f"{path.split('/')[-2]}_{path.split('/')[-1]}"), img)
+
+        return img
 
     def __repr__(self):
         """str: Return a string that describes the module."""

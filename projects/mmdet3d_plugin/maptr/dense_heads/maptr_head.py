@@ -751,6 +751,5 @@ class MapTRHead(DETRHead):
             pts = preds['pts']
 
             ret_list.append([bboxes, scores, labels, pts])
-
         return ret_list
 

@@ -23,7 +23,9 @@ from .nuscenes_dataset import CustomNuScenesDataset, NuScenesDataset
 from nuscenes.eval.common.utils import quaternion_yaw, Quaternion
 from nuscenes.map_expansion.map_api import NuScenesMap, NuScenesMapExplorer
 from shapely.geometry import LineString, box, MultiPolygon, MultiLineString, Polygon
+import cv2
 
+from .evaluation_argo.vector_eval import VectorEvaluate
 
 def add_rotation_noise(extrinsics, std=0.01, mean=0.0):
     #n = extrinsics.shape[0]
@@ -505,19 +507,24 @@ class LiDARInstanceLines(object):
 
 # vectorized the local map 
 class VectorizedLocalMap(object):
+    # CLASS2LABEL = {
+    #     'divider'     : 0,
+    #     'road_divider': 0,
+    #     'lane_divider': 0,
+    #     'ped_crossing': 1,
+    #     'boundary'    : 2,
+    #     'contours': 2,
+    #     'others': -1
+    # }
     CLASS2LABEL = {
-        'divider'     : 0,
-        'road_divider': 0,
-        'lane_divider': 0,
-        'ped_crossing': 1,
-        'boundary'    : 2,
-        'contours': 2,
-        'others': -1
+            'ped_crossing': 0,
+            'divider': 1,
+            'boundary': 2,
     }
     def __init__(self,
                  dataroot,
                  patch_size,
-                 map_classes=['divider','ped_crossing','boundary'],
+                 map_classes=['ped_crossing','divider','boundary'],
                 #  line_classes=['road_divider', 'lane_divider'],
                 line_classes = ['divider', 'boundary'],
                  ped_crossing_classes=['ped_crossing'],
@@ -899,6 +906,9 @@ class CustomAV2MapDataset(Dataset):
                  modality=None,
                  box_type_3d='LiDAR',
                  filter_empty_gt=True,
+                 
+                 ann_file_s3=None,
+                 data_infos_s3=None, 
                  *args, 
                  **kwargs):
         # super().__init__(*args, **kwargs)
@@ -947,6 +957,15 @@ class CustomAV2MapDataset(Dataset):
         self.is_vis_on_test = False
         self.noise = noise
         self.noise_std = noise_std
+
+        self.ann_file_s3 = ann_file_s3
+        self.data_infos_s3 = None
+        if self.ann_file_s3 is not None:
+            data_infos = mmcv.load(self.ann_file_s3, file_format='pkl')
+            if isinstance(data_infos, dict):
+                # self.raw_data_keys = list(data_infos.keys())
+                data_infos = list(data_infos.values())
+            self.data_infos_s3 = data_infos
         
     @classmethod
     def get_map_classes(cls, map_classes=None):
@@ -1044,6 +1063,7 @@ class CustomAV2MapDataset(Dataset):
             list[dict] : List of each samples annotation
 
         """
+        self.ann_file = ann_file
         ann = mmcv.load(ann_file)
         samples = []
         for seg_id, sequence in ann.items():
@@ -1079,7 +1099,7 @@ class CustomAV2MapDataset(Dataset):
                 scene_list.append(frame)
 
             samples_list.extend(scene_list)
-
+        samples_list = samples_list[:20]
         return samples_list
         
     def get_ann_info(self, index):
@@ -1142,6 +1162,46 @@ class CustomAV2MapDataset(Dataset):
         if self.filter_empty_gt and \
                 (example is None or ~(example['gt_labels_3d']._data != -1).any()):
             return None
+
+            
+        # # # 可视化 gt
+        # import cv2
+        # import copy
+        # color_type = {
+        #     0: (0, 0, 255),
+        #     1: (255, 0, 0),
+        #     2: (0, 255, 0),
+        # }
+        # for index, img in enumerate(example['img']._data):
+        #     img = copy.deepcopy(img)
+        #     img = torch.permute(img, (1, 2, 0))
+        #     img = np.uint8(img)
+        #     img = np.ascontiguousarray(img, dtype=np.uint8)
+
+        #     # img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        #     lidar2img = example['img_metas']._data['lidar2img'][index]
+        #     for i, instance in enumerate(example['gt_bboxes_3d']._data.instance_list):
+        #         instance = np.array(instance.coords)
+        #         instance = np.concatenate([instance, np.zeros((instance.shape[0], 1))], axis=1)
+        #         instance = np.concatenate([instance, np.ones((instance.shape[0], 1))], axis=1)
+        #         instance = instance @ lidar2img.T
+        #         instance = instance[instance[:, 2] > 1e-5]
+        #         # if xyz1.shape[0] == 0:
+        #         #     continue
+        #         points_2d = instance[:, :2] / instance[:, 2:3]
+        #         # mask = (points_2d[:, 0] >= 0) & (points_2d[:, 0] < image.shape[1]) & (points_2d[:, 1] >= 0) & (points_2d[:, 1] < image.shape[0])
+        #         points_2d = points_2d.astype(int)
+                
+        #         img = cv2.polylines(img, points_2d[None], False, color_type[example['gt_labels_3d']._data.numpy()[i]], 2)
+
+        #     CAM_TYPE = ['ring_front_center', 'ring_front_left', 'ring_front_right', 'ring_rear_left', 'ring_rear_right', 'ring_side_left', 'ring_side_right']
+        #     dir = f"../instance_draw/{input_dict['scene_token']}/{input_dict['sample_idx']}"
+        #     mmcv.mkdir_or_exist(dir)
+        #     import os
+        #     cv2.imwrite(os.path.join(dir, f"{CAM_TYPE[index]}.png" ), img)
+
+          
+
         data_queue.insert(0, example)
         for i in prev_indexs_list:
             i = max(0, i)
@@ -1226,12 +1286,14 @@ class CustomAV2MapDataset(Dataset):
             scene_token            = info["segment_id"],
             frame_idx              = info["frame_idx"],
             can_bus                = np.zeros((18, )),
-            lidar_anno             = info["annotation"],   # {"ped_crossing": list[(nx4)], "divider": list[nx4], "boundary": list[nx4]}
+          #  lidar_anno             = info["annotation"],   # {"ped_crossing": list[(nx4)], "divider": list[nx4], "boundary": list[nx4]}
             pts_filename           = None,
             sweeps                 = None,
             map_location           = None,
 
         )
+        # if not self.test_mode:
+        input_dict['lidar_anno'] = info["annotation"] 
 
         # lidar to ego transform
         lidar2ego = np.eye(4).astype(np.float32)
@@ -1253,12 +1315,27 @@ class CustomAV2MapDataset(Dataset):
                 prefix = self.map_ann_file.split("/OpenLaneV2")[0] + "/OpenLaneV2"  # hard code
                 # prefix = self.map_ann_file.split("/")[-1].split("_")[0]
                 prefix_path = os.path.join(prefix, folder)
-                image_paths.append(os.path.join(prefix_path, cam_info["image_path"]))
+                if self.ann_file_s3 is None:                # by shengyin
+                    image_path = os.path.join(prefix_path, cam_info["image_path"])
+                else:
+                    image_path = self.data_infos_s3[index]['sensor'][cam_type]['image_path'].replace(
+                        f"{self.data_infos_s3[index]['segment_id']}/image", f"{self.data_infos_s3[index]['meta_data']['source_id']}/sensors/cameras", 1)
+                
+                    image_path = os.path.join('s3://odl-flat/Argoverse2/Sensor_Dataset/sensor', image_path)
+                image_paths.append(image_path)
+
                 # TODO: this is hard code, need modify 
                 # mmcv.imread -> (h, w, c)
-                img_height, img_width, _ = mmcv.imread(os.path.join(prefix_path,
+                
+                if self.ann_file_s3 is not None:
+                    img_height, img_width, _ = self._imread(image_path).shape
+
+                else:
+                    img_height, img_width, _ = mmcv.imread(os.path.join(prefix_path,
                                                                     cam_info["image_path"])).shape 
-                constant_resize_shape = (1600, 900)
+                # constant_resize_shape = (1600, 900)
+                constant_resize_shape = (2048, 1550)
+
                 resize_ratio = [constant_resize_shape[0] / img_width, 
                 constant_resize_shape[1] / img_height]
 
@@ -1364,6 +1441,23 @@ class CustomAV2MapDataset(Dataset):
 
         return input_dict
 
+
+    def _imread(self, path):
+        from petrel_client.client import Client
+        
+        client = Client("~/petreloss.conf") # 若不指定 conf_path ，则从 '~/petreloss.conf' 读取配置文件
+        img_bytes = client.get(path)
+        assert(img_bytes is not None)
+        img_mem_view = memoryview(img_bytes)
+        img_array = np.frombuffer(img_mem_view, np.uint8)
+        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+        # import os
+        # mmcv.mkdir_or_exist(path.split('/')[-5])
+        # cv2.imwrite(os.path.join(path.split('/')[-5], f"{path.split('/')[-2]}_{path.split('/')[-1]}"), img)
+
+        return img
+
     def pre_pipeline(self, results):
         """Initialization before data preparation.
 
@@ -1427,6 +1521,7 @@ class CustomAV2MapDataset(Dataset):
         gt_annos = []
         print('Start to convert gt map format...')
         # assert self.map_ann_file is not None
+        self.out_ann_file = './re.pkl'
         assert self.out_ann_file is not None
         print("out_ann_file: ", self.out_ann_file)
         if (not os.path.exists(self.out_ann_file)) :
@@ -1632,16 +1727,37 @@ class CustomAV2MapDataset(Dataset):
         Returns:
             dict[str, float]: Results of each evaluation metric.
         """
-        result_files, tmp_dir = self.format_results(results, jsonfile_prefix)
+        # result_files, tmp_dir = self.format_results(results, jsonfile_prefix)
 
-        if isinstance(result_files, dict):
-            results_dict = dict()
-            for name in result_names:
-                print('Evaluating bboxes of {}'.format(name))
-                ret_dict = self._evaluate_single(result_files[name], metric=metric)
-            results_dict.update(ret_dict)
-        elif isinstance(result_files, str):
-            results_dict = self._evaluate_single(result_files, metric=metric)
+        # if isinstance(result_files, dict):
+        #     results_dict = dict()
+        #     for name in result_names:
+        #         print('Evaluating bboxes of {}'.format(name))
+        #         ret_dict = self._evaluate_single(result_files[name], metric=metric)
+        #     results_dict.update(ret_dict)
+        # elif isinstance(result_files, str):
+        #     results_dict = self._evaluate_single(result_files, metric=metric)
+
+        result_files, tmp_dir = self.format_results(results, jsonfile_prefix)
+        self.evaluator = VectorEvaluate(self.ann_file)
+        submisson_vector_path = result_files['pts_bbox']
+        submisson_vector = mmcv.load(submisson_vector_path)
+        submisson_vector['meta'] = {
+                'use_lidar': False,
+                'use_camera': True,
+                "use_external": False,                     
+                "output_format": "vector",                  
+                'use_external': False,
+
+                # NOTE: please fill the information below
+                'method': 'maptr',                            
+                'authors': ['JiangShengyin'],                          
+                'e-mail': 'shengyin@bupt.edu.cn',                            
+                'institution / company': 'bupt',         
+                'country / region': 'china',                  
+        }
+        mmcv.dump(submisson_vector, 'submisson_vector.json')
+        results_dict = self.evaluator.evaluate(result_files['pts_bbox'], logger=logger)
 
         if tmp_dir is not None:
             tmp_dir.cleanup()
@@ -1649,6 +1765,9 @@ class CustomAV2MapDataset(Dataset):
         if show:
             self.show(results, out_dir, pipeline=pipeline)
         return results_dict
+
+
+
 
     def _format_bbox(self, results, jsonfile_prefix=None):
         """Convert the results to the standard format.
@@ -1663,34 +1782,23 @@ class CustomAV2MapDataset(Dataset):
             str: Path of the output json file.
         """
         assert self.map_ann_file is not None
-        pred_annos = []
+        pred_annos = {}
         mapped_class_names = self.MAPCLASSES
-        # import pdb;pdb.set_trace()
         print('Start to convert map detection format...')
         for sample_id, det in enumerate(mmcv.track_iter_progress(results)):
-            pred_anno = {}
             vecs = output_to_vecs(det)
-            sample_token = self.data_infos[sample_id]['timestamp']
-            pred_anno['sample_token'] = sample_token
-            pred_vec_list=[]
+
+            single_case = {'vectors': [], 'scores': [], 'labels': []}
             for i, vec in enumerate(vecs):
-                name = mapped_class_names[vec['label']]
-                anno = dict(
-                    pts=vec['pts'],
-                    pts_num=len(vec['pts']),
-                    cls_name=name,
-                    type=vec['label'],
-                    confidence_level=vec['score'])
-                pred_vec_list.append(anno)
-
-            pred_anno['vectors'] = pred_vec_list
-            pred_annos.append(pred_anno)
-
-
-        if not os.path.exists(self.out_ann_file):
-            self._format_gt()
-        else:
-            print(f'{self.out_ann_file} exist, not update')
+                # name = mapped_class_names[vec['label']]
+                
+                single_case['vectors'].append(vec['pts'])
+                single_case['scores'].append(vec['score'])
+                single_case['labels'].append(vec['label'])
+       
+            sample_token = self.data_infos[sample_id]['timestamp']
+            pred_annos[sample_token] = single_case
+            self.draw(single_case, sample_id)
 
         nusc_submissions = {
             'meta': self.modality,
@@ -1703,6 +1811,178 @@ class CustomAV2MapDataset(Dataset):
         print('Results writes to', res_path)
         mmcv.dump(nusc_submissions, res_path)
         return res_path
+
+
+    def draw(self, result, sample_id):
+        import cv2
+        def _imread( path):
+            from petrel_client.client import Client
+            client = Client("~/petreloss.conf") # 若不指定 conf_path ，则从 '~/petreloss.conf' 读取配置文件
+            img_bytes = client.get(path)
+            assert(img_bytes is not None)
+            img_mem_view = memoryview(img_bytes)
+            img_array = np.frombuffer(img_mem_view, np.uint8)
+            img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+            return img
+        
+        scene_data = self.data_infos[sample_id]
+        sample_s3 = self.data_infos_s3[sample_id]
+
+        COLOR_MAP_GT = {  
+            'ped_crossing': (255, 0, 0),
+            'divider': (0, 0, 255),
+            'boundary': (0, 255, 0),
+        }
+
+        COLOR_MAP_PRE = {  
+            'ped_crossing': (155, 0, 0),
+            'divider': (0, 0, 155),
+            'boundary': (0, 155, 0),
+        }
+
+        map_size=[-55, 55, -30, 30]
+        scale=10
+
+        draw_gt_dir = 'draw_gt'
+        path_dataroot = 's3://odl-flat/Argoverse2/Sensor_Dataset/sensor'
+        
+        for frame in scene_data:
+            sensor = scene_data['sensor']
+
+            for cam in sensor.keys():
+                path_img = self.data_infos_s3[sample_id]['sensor'][cam]['image_path'].replace(
+                        f"{self.data_infos_s3[sample_id]['segment_id']}/image", f"{self.data_infos_s3[sample_id]['meta_data']['source_id']}/sensors/cameras", 1)
+                
+                path_img = os.path.join(path_dataroot, path_img)
+                img = _imread(path_img)
+
+                intrinsic = np.array(scene_data['sensor'][cam]['intrinsic'])
+                extrinsic = np.array(scene_data['sensor'][cam]['extrinsic']) 
+
+                viewpad = np.eye(4)     
+                viewpad[:intrinsic.shape[0], :intrinsic.shape[1]] = intrinsic
+                ego2img = (viewpad @ extrinsic)
+
+
+                # for bev
+                bev_image_gt = np.zeros((int(scale*(map_size[1]-map_size[0])), int(scale*(map_size[3] - map_size[2])), 3), dtype=np.uint8)
+                bev_image_pred = np.zeros((int(scale*(map_size[1]-map_size[0])), int(scale*(map_size[3] - map_size[2])), 3), dtype=np.uint8)
+
+                for name, pts in scene_data['annotation'].items():
+
+                    # for img
+                    for line in pts:
+                        line = np.array(line)[:, :3]
+                        line[:, 2] = 0.0        # 这里强行赋值 z为0 
+                        xyz1 = np.concatenate([line, np.ones((line.shape[0], 1))], axis=1)
+                        xyz1 = xyz1 @ ego2img.T
+                        xyz1 = xyz1[xyz1[:, 2] > 1e-5]
+                        if xyz1.shape[0] == 0:
+                            continue
+                        points_2d = xyz1[:, :2] / xyz1[:, 2:3]
+                        # mask = (points_2d[:, 0] >= 0) & (points_2d[:, 0] < image.shape[1]) & (points_2d[:, 1] >= 0) & (points_2d[:, 1] < image.shape[0])
+                        points_2d = points_2d.astype(int)
+                            
+                        img = cv2.polylines(img, points_2d[None], False, COLOR_MAP_GT[name], 2)
+
+                    for vec, score, label in zip(result['vectors'], result['scores'], result['labels']):
+                        if score < 0.1:
+                            continue
+                        vec = np.concatenate([vec, np.zeros((vec.shape[0], 1))], axis=1)
+                        xyz1 = np.concatenate([vec, np.ones((vec.shape[0], 1))], axis=1)
+                        xyz1 = xyz1 @ ego2img.T
+                        xyz1 = xyz1[xyz1[:, 2] > 1e-5]
+                        if xyz1.shape[0] == 0:
+                            continue
+                        points_2d = xyz1[:, :2] / xyz1[:, 2:3]
+                        # mask = (points_2d[:, 0] >= 0) & (points_2d[:, 0] < image.shape[1]) & (points_2d[:, 1] >= 0) & (points_2d[:, 1] < image.shape[0])
+                        points_2d = points_2d.astype(int)
+                            
+                        img = cv2.polylines(img, points_2d[None], False, COLOR_MAP_PRE[list(COLOR_MAP_PRE.keys())[label]], 2) 
+
+
+            
+                    for lane in pts:
+                        draw_coor = (scale * (-np.array(lane)[:, :2] + np.array([map_size[1], map_size[3]]))).astype(np.int)
+                        bev_image_gt = cv2.polylines(bev_image_gt, [draw_coor[:, [1,0]]], False, COLOR_MAP_GT[name], max(round(scale * 0.2), 1))
+                        bev_image_gt = cv2.circle(bev_image_gt, (draw_coor[0, 1], draw_coor[0, 0]), max(2, round(scale * 0.5)), COLOR_MAP_GT[name], -1)
+                        bev_image_gt = cv2.circle(bev_image_gt, (draw_coor[-1, 1], draw_coor[-1, 0]), max(2, round(scale * 0.5)) , COLOR_MAP_GT[name], -1)
+
+
+                    for lane, score, label in zip(result['vectors'], result['scores'], result['labels']):
+                        if score < 0.1:
+                            continue
+                        draw_coor = (scale * (-np.array(lane)[:, :2] + np.array([map_size[1], map_size[3]]))).astype(np.int)
+                        bev_image_pred = cv2.polylines(bev_image_pred, [draw_coor[:, [1,0]]], False, COLOR_MAP_PRE[list(COLOR_MAP_PRE.keys())[label]], max(round(scale * 0.2), 1))
+                        bev_image_pred = cv2.circle(bev_image_pred, (draw_coor[0, 1], draw_coor[0, 0]), max(2, round(scale * 0.5)), COLOR_MAP_PRE[list(COLOR_MAP_PRE.keys())[label]], -1)
+                        bev_image_pred = cv2.circle(bev_image_pred, (draw_coor[-1, 1], draw_coor[-1, 0]), max(2, round(scale * 0.5)) , COLOR_MAP_PRE[list(COLOR_MAP_PRE.keys())[label]], -1)
+
+                    
+
+                mmcv.mkdir_or_exist(os.path.join(f'{draw_gt_dir}', f'{scene_data["segment_id"]}', f'{scene_data["timestamp"]}'))
+                cv2.imwrite(os.path.join(f'{draw_gt_dir}', f'{scene_data["segment_id"]}', f'{scene_data["timestamp"]}', f'{cam}.png'), img)
+                
+                bev_image_overlab = bev_image_gt + bev_image_pred
+                bev_image = np.concatenate([bev_image_pred, bev_image_overlab, bev_image_gt], axis=1)
+                cv2.imwrite(os.path.join(f'{draw_gt_dir}', f'{scene_data["segment_id"]}', f'{scene_data["timestamp"]}', f'bev.png'), bev_image)
+                
+
+
+
+
+    # def _format_bbox(self, results, jsonfile_prefix=None):
+    #     """Convert the results to the standard format.
+
+    #     Args:
+    #         results (list[dict]): Testing results of the dataset.
+    #         jsonfile_prefix (str): The prefix of the output jsonfile.
+    #             You can specify the output directory/filename by
+    #             modifying the jsonfile_prefix. Default: None.
+
+    #     Returns:
+    #         str: Path of the output json file.
+    #     """
+    #     assert self.map_ann_file is not None
+    #     pred_annos = []
+    #     mapped_class_names = self.MAPCLASSES
+    #     # import pdb;pdb.set_trace()
+    #     print('Start to convert map detection format...')
+    #     for sample_id, det in enumerate(mmcv.track_iter_progress(results)):
+    #         pred_anno = {}
+    #         vecs = output_to_vecs(det)
+    #         sample_token = self.data_infos[sample_id]['timestamp']
+    #         pred_anno['sample_token'] = sample_token
+    #         pred_vec_list=[]
+    #         for i, vec in enumerate(vecs):
+    #             name = mapped_class_names[vec['label']]
+    #             anno = dict(
+    #                 pts=vec['pts'],
+    #                 pts_num=len(vec['pts']),
+    #                 cls_name=name,
+    #                 type=vec['label'],
+    #                 confidence_level=vec['score'])
+    #             pred_vec_list.append(anno)
+
+    #         pred_anno['vectors'] = pred_vec_list
+    #         pred_annos.append(pred_anno)
+
+    #     self._format_gt()
+    #     # if not os.path.exists(self.out_ann_file):
+    #     #     self._format_gt()
+    #     # else:
+    #     #     print(f'{self.out_ann_file} exist, not update')
+
+    #     nusc_submissions = {
+    #         'meta': self.modality,
+    #         'results': pred_annos,
+
+    #     }
+
+    #     mmcv.mkdir_or_exist(jsonfile_prefix)
+    #     res_path = osp.join(jsonfile_prefix, 'nuscmap_results.json')
+    #     print('Results writes to', res_path)
+    #     mmcv.dump(nusc_submissions, res_path)
+    #     return res_path
 
     def to_gt_vectors(self,
                       gt_dict):

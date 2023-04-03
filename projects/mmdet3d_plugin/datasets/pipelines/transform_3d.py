@@ -40,6 +40,8 @@ class PadMultiViewImage(object):
         results['pad_fixed_size'] = self.size
         results['pad_size_divisor'] = self.size_divisor
 
+
+
     def __call__(self, results):
         """Call function to pad images, masks, semantic segmentation maps.
         Args:
