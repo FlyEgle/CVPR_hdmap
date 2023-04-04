@@ -6,7 +6,7 @@ from mmcv.parallel import DataContainer as DC
 from mmdet.datasets.builder import PIPELINES
 from mmdet.datasets.pipelines import to_tensor
 from mmdet3d.datasets.pipelines import DefaultFormatBundle3D
-
+import copy
 
 
 
@@ -46,10 +46,17 @@ class ArgoFormatBundle3D(object):
                 results['img'] = DC(to_tensor(img), stack=True)
 
         if 'ego2img' in results:        # argo 数据集中只有img、cam、ego、global坐标系，而nuscenes多了一个lidar坐标系
-            results['lidar2img'] = results['ego2img']
+            results['lidar2img'] = copy.deepcopy(results['ego2img'])
 
         if 'ego2global' in results:
-            results['lidar2global'] = results['ego2global'] 
+            results['lidar2global'] = copy.deepcopy(results['ego2global'])
+
+        
+        results['ego2img'] = DC(to_tensor(results['ego2img']), stack=True)
+
+        if 'gt_uvsegmentations' in results:
+            results['gt_uvsegmentations'] = DC(to_tensor(results['gt_uvsegmentations']), stack=True) 
+
 
         # if 'gt_lanes_3d' in results:
         #     results['gt_lanes_3d'] = DC(

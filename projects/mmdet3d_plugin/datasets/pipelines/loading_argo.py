@@ -55,6 +55,7 @@ class LoadAnnotations3DArgo(LoadAnnotations):
                  with_seg=False,
                  poly2mask=True,
                  seg_3d_dtype='int',
+                 with_uvsegmentation=False,
                  file_client_args=dict(backend='disk')):
         super().__init__(
             with_bbox,
@@ -68,6 +69,7 @@ class LoadAnnotations3DArgo(LoadAnnotations):
         self.with_mask_3d = with_mask_3d
         self.with_seg_3d = with_seg_3d
         self.seg_3d_dtype = seg_3d_dtype
+        self.with_uvsegmentation=with_uvsegmentation
 
     def _load_bboxes_3d(self, results):
         """Private function to load 3D bounding box annotations.
@@ -94,6 +96,9 @@ class LoadAnnotations3DArgo(LoadAnnotations):
         results['gt_labels_3d'] = results['ann_info']['gt_vecs_label']
         return results
 
+    def _load_with_uvsegmentation(self,results):
+        results['gt_for_uvsegmentation_list'] = results['ann_info']['gt_for_uvsegmentation_list']
+        return results
 
     def _load_masks_3d(self, results):
         """Private function to load 3D mask annotations.
@@ -168,6 +173,8 @@ class LoadAnnotations3DArgo(LoadAnnotations):
             results = self._load_masks_3d(results)
         if self.with_seg_3d:
             results = self._load_semantic_seg_3d(results)
+        if self.with_uvsegmentation:
+            results = self._load_with_uvsegmentation(results)
         return results
 
     def __repr__(self):

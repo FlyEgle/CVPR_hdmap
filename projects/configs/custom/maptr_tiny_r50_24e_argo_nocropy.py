@@ -204,7 +204,8 @@ train_pipeline = [
     dict(type='LoadAnnotations3DArgo', with_bbox_3d=True, with_label_3d=True),
     # dict(type='ObjectNameFilter', classes=class_names),
     dict(type='NormalizeMultiviewImage', **img_norm_cfg),
-    dict(type='CropFrontViewImageForArgo'),
+    # dict(type='CropFrontViewImageForArgo'),
+    dict(type='ResizeMultiViewImageForArgo', resize=[2048, 1550]),
     dict(type='RandomScaleImageMultiViewImageArgo', scales=[0.5]),
     # dict(type='GenerateUVSegmentationForArgo', thickness=10), 
     dict(type='PadMultiViewImageForArgo', size_divisor=32),
@@ -222,7 +223,8 @@ train_pipeline = [
 test_pipeline = [
     dict(type='LoadMultiViewImagesFromFilesForArgo', to_float32=True),
     dict(type='NormalizeMultiviewImage', **img_norm_cfg),
-    dict(type='CropFrontViewImageForArgo'),
+    # dict(type='CropFrontViewImageForArgo'),
+    dict(type='ResizeMultiViewImageForArgo', resize=[2048, 1550]),
     dict(type='RandomScaleImageMultiViewImageArgo', scales=[0.5]),
     dict(type='PadMultiViewImageForArgo', size_divisor=32),
     dict(type='ArgoFormatBundle3D', class_names=class_names, with_label=False),
@@ -309,7 +311,7 @@ lr_config = dict(
 total_epochs = 24
 # total_epochs = 50
 # evaluation = dict(interval=1, pipeline=test_pipeline)
-evaluation = dict(interval=2, pipeline=test_pipeline, metric='chamfer')
+evaluation = dict(interval=4, pipeline=test_pipeline, metric='chamfer')
 
 runner = dict(type='EpochBasedRunner', max_epochs=total_epochs)
 
@@ -318,15 +320,15 @@ log_config = dict(
     hooks=[
         dict(type='TextLoggerHook'),
         # dict(type='TensorboardLoggerHook'),
-        # dict(
-        #     type='WandbLoggerHook', 
-        #     init_kwargs=dict(
-        #         project='For test',
-        #         entity='cvpr_hdmap',
-        #         name='Adaptation_maptr_for_argo_baseline_lastnew')
-        # ),
+        dict(
+            type='WandbLoggerHook', 
+            init_kwargs=dict(
+                project='For test',
+                entity='cvpr_hdmap',
+                name='Adaptation_maptr_for_argo_baseline_nocrop_800*1024_bs6_lr6e-4')
+        ),
     ])
 fp16 = dict(loss_scale=512.)
-checkpoint_config = dict(interval=2)
+checkpoint_config = dict(interval=4)
 
-resume_from = None 
+resume_from = "/home/jiangshengyin/shengyin/CVPR_hdmap/work_dirs/maptr_tiny_r50_24e_argo_nocropy/latest.pth"

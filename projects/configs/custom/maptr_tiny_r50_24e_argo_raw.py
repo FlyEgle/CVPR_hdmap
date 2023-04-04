@@ -43,10 +43,8 @@ _ffn_dim_ = _dim_*2
 _num_levels_ = 1
 # bev_h_ = 50
 # bev_w_ = 50
-# bev_h_ = 100
-# bev_w_ = 200
-bev_h_ = 100
-bev_w_ = 200
+bev_h_ = 200 
+bev_w_ = 100
 queue_length = 1 # each sequence contains `queue_length` frames.
 
 model = dict(
@@ -238,7 +236,7 @@ test_pipeline = [
 
 
 data = dict(
-    samples_per_gpu=6,
+    samples_per_gpu=4,
     workers_per_gpu=16,
     train=dict(
         type=dataset_type,
@@ -318,15 +316,15 @@ log_config = dict(
     hooks=[
         dict(type='TextLoggerHook'),
         # dict(type='TensorboardLoggerHook'),
-        # dict(
-        #     type='WandbLoggerHook', 
-        #     init_kwargs=dict(
-        #         project='For test',
-        #         entity='cvpr_hdmap',
-        #         name='Adaptation_maptr_for_argo_baseline_lastnew')
-        # ),
+        dict(
+            type='WandbLoggerHook', 
+            init_kwargs=dict(
+                project='For test',
+                entity='cvpr_hdmap',
+                name='Adaptation_maptr_for_argo_fixAxis')
+        ),
     ])
 fp16 = dict(loss_scale=512.)
 checkpoint_config = dict(interval=2)
 
-resume_from = None 
+resume_from = '/home/jiangshengyin/shengyin/work_dirs/maptr_tiny_r50_24e_argo_change/latest.pth' 

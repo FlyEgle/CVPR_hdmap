@@ -35,6 +35,8 @@ class MapTR(MVXTwoStageDetector):
                  video_test_mode=False,
                  modality='vision',
                  lidar_encoder=None,
+
+                 uvsegmentations_aux_head=None,
                  ):
 
         super(MapTR,
@@ -69,6 +71,10 @@ class MapTR(MVXTwoStageDetector):
                 }
             )
             self.voxelize_reduce = lidar_encoder.get("voxelize_reduce", True)
+
+        self.uvsegmentations_aux_head = uvsegmentations_aux_head
+        if self.uvsegmentations_aux_head is not None:
+            self.uvsegmentations_aux_head = builder.build_head(uvsegmentations_aux_head)
 
 
     def extract_img_feat(self, img, img_metas, len_queue=None):
@@ -234,6 +240,9 @@ class MapTR(MVXTwoStageDetector):
                       gt_bboxes_ignore=None,
                       img_depth=None,
                       img_mask=None,
+
+                      ego2img=None, # [6, 7, 4, 4]
+                      gt_uvsegmentations=None,
                       ):
         """Forward training function.
         Args:
@@ -265,7 +274,7 @@ class MapTR(MVXTwoStageDetector):
         len_queue = img.size(1)
         prev_img = img[:, :-1, ...]
         img = img[:, -1, ...]
-
+        # [6, 7, 3, 800, 1024]
         prev_img_metas = copy.deepcopy(img_metas)
         # prev_bev = self.obtain_history_bev(prev_img, prev_img_metas)
         # import pdb;pdb.set_trace()
@@ -273,12 +282,20 @@ class MapTR(MVXTwoStageDetector):
 
         img_metas = [each[len_queue-1] for each in img_metas]
         img_feats = self.extract_feat(img=img, img_metas=img_metas)
+        # 0:[6, 7, 256, 25, 32]
+    
         losses = dict()
+        if self.uvsegmentations_aux_head is not None:
+            seg = self.uvsegmentations_aux_head(img_feats, ego2img)
+            seg_losses = self.uvsegmentations_aux_head.get_segmentation_loss(seg, gt_uvsegmentations)
+            losses.update(seg_losses)
+            
+
         losses_pts = self.forward_pts_train(img_feats, lidar_feat, gt_bboxes_3d,
                                             gt_labels_3d, img_metas,
                                             gt_bboxes_ignore, prev_bev)
-
         losses.update(losses_pts)
+
         return losses
 
     def forward_test(self, img_metas, img=None,points=None,  **kwargs):

@@ -145,3 +145,5 @@ cluster.sh
 
 
 wandb/
+nohup.out
+submisson_vector.json

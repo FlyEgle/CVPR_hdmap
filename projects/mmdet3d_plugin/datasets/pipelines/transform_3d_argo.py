@@ -96,11 +96,11 @@ class PadMultiViewImageForArgo(object):
         """Pad images according to ``self.size``."""
         max_h = max([img.shape[0] for img in results['img']])
         max_w = max([img.shape[1] for img in results['img']])
+        results['before_pad_shape'] = [img.shape for img in results['img']]
         padded_img = [mmcv.impad(img, shape=(max_h, max_w), pad_val=self.pad_val) for img in results['img']]
         if self.size_divisor is not None:
             padded_img = [mmcv.impad_to_multiple(
                 img, self.size_divisor, pad_val=self.pad_val) for img in padded_img]
-        
         results['img'] = padded_img
         results['pad_shape'] = [img.shape for img in padded_img]
         results['pad_fixed_size'] = None
@@ -118,8 +118,13 @@ class PadMultiViewImageForArgo(object):
         #         instance = np.array(instance.coords)
         #         instance = np.concatenate([instance, np.zeros((instance.shape[0], 1))], axis=1)
         #         instance = np.concatenate([instance, np.ones((instance.shape[0], 1))], axis=1)
+
+        #     # for instance in results['gt_for_uvsegmentation_list']:
+        #     #     # instance = np.concatenate([instance, np.zeros((instance.shape[0], 1))], axis=1) 
+        #     #     instance = np.concatenate([instance, np.ones((instance.shape[0], 1))], axis=1)
         #         instance = instance @ lidar2img.T
         #         instance = instance[instance[:, 2] > 1e-5]
+
         #         # if xyz1.shape[0] == 0:
         #         #     continue
         #         points_2d = instance[:, :2] / instance[:, 2:3]
@@ -128,9 +133,14 @@ class PadMultiViewImageForArgo(object):
                 
         #         img = cv2.polylines(img, points_2d[None], False, (0, 255, 0), 2)
 
-        #     mmcv.mkdir_or_exist('instance_draw')
-        #     import os
-        #     cv2.imwrite(os.path.join('instance_draw', f'{index}.png'), img)
+        #     # mmcv.mkdir_or_exist('instance_draw')
+        #     # import os
+        #     # cv2.imwrite(os.path.join('instance_draw', f'{index}.png'), img)
+
+        #     CAM_TYPE = ['ring_front_center', 'ring_front_left', 'ring_front_right', 'ring_rear_left', 'ring_rear_right', 'ring_side_left', 'ring_side_right']
+        #     dir = f"../padding_img_raw/{results['scene_token']}/{results['sample_idx']}"
+        #     mmcv.mkdir_or_exist(dir)
+        #     cv2.imwrite(os.path.join(dir, f"{CAM_TYPE[index]}.png" ), img)
 
 
     def __call__(self, results):
@@ -160,18 +170,15 @@ class GenerateUVSegmentationForArgo(object):
     def _generate_uvsegmentation(self, results):
         """generate uvsegmentation."""
         gt_uvsegmentations = []
-
         for img in results['img']:
             gt_uvsegmentation = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
-
 
         for index, img in enumerate(results['img']):
             gt_uvsegmentation = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
             lidar2img = results['ego2img'][index]
 
-            for instance in results['gt_bboxes_3d'].instance_list:
-                instance = np.array(instance.coords)
-                instance = np.concatenate([instance, np.zeros((instance.shape[0], 1))], axis=1) 
+            for instance in results['gt_for_uvsegmentation_list']:
+                # instance = np.concatenate([instance, np.zeros((instance.shape[0], 1))], axis=1) 
                 instance = np.concatenate([instance, np.ones((instance.shape[0], 1))], axis=1)
                
                 instance = instance @ lidar2img.T
@@ -180,12 +187,16 @@ class GenerateUVSegmentationForArgo(object):
                 points_2d = points_2d.astype(int)
                 
                 gt_uvsegmentation = cv2.polylines(gt_uvsegmentation, points_2d[None], False, (255, 255, 255), thickness=self.thickness)
-        
-            gt_uvsegmentations.append(gt_uvsegmentation)
+
+            # 过滤掉 padding 的那部分区域 
+            gt_uvsegmentation[results['before_pad_shape'][index][0]:] = 0
+            gt_uvsegmentation[:, results['before_pad_shape'][index][1]:] =0
+      
+            gt_uvsegmentations.append(gt_uvsegmentation.astype(np.float64))
             
-            # # 可视化 gt_uvsegmentation 
+            # # # 可视化 gt_uvsegmentation 
             # CAM_TYPE = ['ring_front_center', 'ring_front_left', 'ring_front_right', 'ring_rear_left', 'ring_rear_right', 'ring_side_left', 'ring_side_right']
-            # dir = f"../gt_uvsegmentations/{results['scene_token']}/{results['sample_idx']}"
+            # dir = f"../gt_uvsegmentations_raw/{results['scene_token']}/{results['sample_idx']}"
             # mmcv.mkdir_or_exist(dir)
             # cv2.imwrite(os.path.join(dir, f"{CAM_TYPE[index]}.png" ), gt_uvsegmentation)
 
@@ -207,3 +218,28 @@ class GenerateUVSegmentationForArgo(object):
         repr_str += f'thickness={self.thickness}, '
         return repr_str
 
+
+
+
+@PIPELINES.register_module()
+class ResizeMultiViewImageForArgo(object):
+
+    def __init__(self, resize=(2048, 1550)):
+        self.size = resize
+
+    def __call__(self, results):
+        """Call function to resize img.
+        Args:
+            results (dict): Result dict from loading pipeline.
+        Returns:
+            dict: Updated result dict.
+        """
+        for index, img in enumerate(results['img']):
+            results['img'][index], w_scale, h_scale = mmcv.imresize(img, (self.size), return_scale=True)
+            scale_factor = np.eye(4)
+            scale_factor[0, 0] *= w_scale
+            scale_factor[1, 1] *= h_scale
+            results['camera_intrinsics'][index] = scale_factor @ results['camera_intrinsics'][index] 
+            results['ego2img'][index] = scale_factor @ results['ego2img'][index]
+        
+        return results

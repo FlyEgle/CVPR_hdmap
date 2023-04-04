@@ -14,9 +14,9 @@ from mmcv.cnn import build_conv_layer
 import numpy as np
 import math
 import copy
+from mmdet.models import HEADS
 
-
-__all__ = ["uvSegmentationsAuxHead", "AuxBEVSegmentationHead"]
+# __all__ = ["uvSegmentationsAuxHead", "AuxBEVSegmentationHead"]
 
 
 def sigmoid_xent_loss(inputs: torch.Tensor, targets: torch.Tensor,reduction: str = "mean") -> torch.Tensor:
@@ -140,6 +140,7 @@ class uvSegmentationsAux_layer(nn.Module):
 
     # @auto_fp16()
     def forward(self, x, mlp_input):
+        import pdb; pdb.set_trace()
         mlp_input = self.bn(mlp_input.reshape(-1, mlp_input.shape[-1] *mlp_input.shape[-1]))
         # import pdb; pdb.set_trace()        
         # x = x.to(torch.FloatTensor)
@@ -153,13 +154,25 @@ class uvSegmentationsAux_layer(nn.Module):
      
         return context
 
-
+@HEADS.register_module()
 class uvSegmentationsAuxHead(nn.Module):
     """uv images segmentations with aux loss
     """
-    def __init__(self, target_size=[256, 704], in_channels=256, out_channels=64, scales=[8, 16, 32]):
+    def __init__(self, 
+                 target_size=[256, 704], 
+                 in_channels=256, 
+                 out_channels=64, 
+                 scales=[8, 16, 32],
+                 loss_segmentations_type='xent_dice',
+                 camera_type = ['ring_front_center', 'ring_front_left', 'ring_front_right', \
+                                'ring_rear_left', 'ring_rear_right', 'ring_side_left', 'ring_side_right'],
+ 
+                 ):
         super(uvSegmentationsAuxHead, self).__init__()
         
+        self.loss_segmentations_type = loss_segmentations_type 
+        self.loss_segmentations = self._xent_dice_loss if loss_segmentations_type=='xent_dice' else self._xent_loss
+        self.camera_type = camera_type
 
         self.target_size = target_size
 
@@ -218,14 +231,11 @@ class uvSegmentationsAuxHead(nn.Module):
         self.outconv = nn.Conv2d(len(scales), 1, 1)
     
 
-    def get_uvsegmentations_gt(self, gt_vecs_list, lidar2imgs, img_shape):
-        device = lidar2imgs[0].device
-        gt_pts_list = [
-            gt_bboxes.gt_pts_list.to(device) for gt_bboxes in gt_vecs_list]
+    def _xent_loss(self, x, target):
+        return sigmoid_xent_loss(x, target)
 
-        
-
-
+    def _xent_dice_loss(self, x, target):
+        return sigmoid_xent_loss(x, target) + dice_loss(x, target) 
 
 
     # @auto_fp16()
@@ -235,19 +245,46 @@ class uvSegmentationsAuxHead(nn.Module):
         for i in range(len(inputs)):
             # stage
             
-            input = self.strengModule[i](inputs[i], lidar2imgs)
-            # input = inputs[i]
+            # input = self.strengModule[i](inputs[i], lidar2imgs)
+            input = inputs[i]
+            input = input.flatten(0, 1)
             stage_out = self.headModule[i](input)
             # out
             out = self.out[i](stage_out)
             out_list.append(out)
         
         # ((B*T), C, H, W)
-        import pdb; pdb.set_trace()
+      
         outcat = torch.cat(out_list, dim=1)
         out = self.outconv(outcat)
 
         return out 
+    
+    def get_segmentation_loss(self, x, target):
+        if isinstance(x, (list, tuple)):
+            x = x[0]
+        # (b*t) * c * h * w -> b * t * c * h * w
+        bt, c, h, w = x.shape 
+        x = x.view(bt // len(self.camera_type), len(self.camera_type) * c, h, w)
+        target = target/target.max()
+        # print("view x shape: ", x.shape)
+        # print("target shape: ", target.shape)
+        losses = {}
+
+        for index, name in enumerate(self.camera_type):
+            loss = self.loss_segmentations(x[:, index], target[:, index])
+            # if self.loss == "xent":
+            #     loss = sigmoid_xent_loss(x[:, index], target[:, index])
+            # elif self.loss == "xent_dice":
+            #     bceloss = sigmoid_xent_loss(x[:, index], target[:, index])
+            #     diceloss = dice_loss(x[:, index], target[:, index])
+            #     loss = bceloss + diceloss
+            # else:
+            #     raise ValueError(f"unsupported loss: {self.loss}")
+            losses[f"{name}/{self.loss_segmentations_type}"] = loss
+            import pdb; pdb.set_trace() 
+        return losses
+       
 
 
 class AuxBEVSegmentationHead(nn.Module):

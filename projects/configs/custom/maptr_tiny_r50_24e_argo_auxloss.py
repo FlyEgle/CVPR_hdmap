@@ -71,6 +71,16 @@ model = dict(
         add_extra_convs='on_output',
         num_outs=_num_levels_,
         relu_before_extra_convs=True),
+
+    uvsegmentations_aux_head=dict(
+        type='uvSegmentationsAuxHead',
+        target_size=[256, 704], 
+        in_channels=_dim_, 
+        out_channels=64, 
+        scales=[32,],
+        loss_segmentations_type='xent_dice',
+    ),
+    
     pts_bbox_head=dict(
         type='MapTRHead',
         bev_h=bev_h_,
@@ -201,15 +211,15 @@ file_client_args = dict(backend='disk')
 train_pipeline = [
     dict(type='LoadMultiViewImagesFromFilesForArgo', to_float32=True),
     dict(type='PhotoMetricDistortionMultiViewImage'),
-    dict(type='LoadAnnotations3DArgo', with_bbox_3d=True, with_label_3d=True),
+    dict(type='LoadAnnotations3DArgo', with_bbox_3d=True, with_label_3d=True, with_uvsegmentation=True),
     # dict(type='ObjectNameFilter', classes=class_names),
     dict(type='NormalizeMultiviewImage', **img_norm_cfg),
     dict(type='CropFrontViewImageForArgo'),
     dict(type='RandomScaleImageMultiViewImageArgo', scales=[0.5]),
-    # dict(type='GenerateUVSegmentationForArgo', thickness=10), 
     dict(type='PadMultiViewImageForArgo', size_divisor=32),
+    dict(type='GenerateUVSegmentationForArgo', thickness=10), 
     dict(type='ArgoFormatBundle3D', class_names=class_names),
-    dict(type='CustomCollect3D', keys=['gt_bboxes_3d', 'gt_labels_3d', 'img'], 
+    dict(type='CustomCollect3D', keys=['gt_bboxes_3d', 'gt_labels_3d', 'img', 'ego2img', 'gt_uvsegmentations'], 
                             meta_keys=('filename', 'ori_shape', 'img_shape', 'lidar2img',
                             'depth2img', 'cam2img', 'pad_shape', \
                             'scale_factor', 'flip', 'img_norm_cfg',  'sample_idx',
@@ -238,7 +248,7 @@ test_pipeline = [
 
 
 data = dict(
-    samples_per_gpu=6,
+    samples_per_gpu=2,
     workers_per_gpu=16,
     train=dict(
         type=dataset_type,
@@ -291,7 +301,8 @@ data = dict(
 
 optimizer = dict(
     type='AdamW',
-    lr=6e-4,
+    # lr=6e-4,
+    lr=3e-4,
     paramwise_cfg=dict(
         custom_keys={
             'img_backbone': dict(lr_mult=0.1),
@@ -321,12 +332,12 @@ log_config = dict(
         # dict(
         #     type='WandbLoggerHook', 
         #     init_kwargs=dict(
-        #         project='For test',
+        #         project='For trick',
         #         entity='cvpr_hdmap',
-        #         name='Adaptation_maptr_for_argo_baseline_lastnew')
+        #         name='SegAuxLoss_baseline_xyz_xent_dice_bs2_lr3e-4_x8')
         # ),
     ])
 fp16 = dict(loss_scale=512.)
 checkpoint_config = dict(interval=2)
-
+find_unused_parameters=True
 resume_from = None 

@@ -1,1 +1,2 @@
 from .maptr_head import MapTRHead
+from .uvsegmentations_aux_head import uvSegmentationsAuxHead
