@@ -592,6 +592,7 @@ class VectorizedLocalMap(object):
         line_geom = self.get_map_geom_from_lidar(anns, self.vec_classes)
         line_instances_dict = self.line_geoms_to_instances(line_geom)  
         # if vec_class == "divider" or vec_class == "boundary":   
+   
         for line_type, instances in line_instances_dict.items():
             for instance in instances:
                 vectors.append((instance, self.CLASS2LABEL.get(line_type, -1)))
@@ -925,7 +926,8 @@ class CustomAV2MapDataset(Dataset):
         self.overlap_test = overlap_test
         self.bev_size = bev_size
         self.data_infos = self._load_annotations(self.map_ann_file) # debug
-        self.CLASSES = ('divider', 'boundary', 'ped_crossing')
+        self.CLASSES = ('divider', 'ped_crossing', 'boundary')
+        # self.CLASSES = ('ped_crossing', 'divider', 'boundary')
         self.MAPCLASSES = self.get_map_classes(map_classes)  # ['divider', 'ped_crossing','boundary']
         self.NUM_MAPCLASSES = len(self.MAPCLASSES)
         self.pc_range = pc_range
@@ -957,7 +959,6 @@ class CustomAV2MapDataset(Dataset):
         self.is_vis_on_test = False
         self.noise = noise
         self.noise_std = noise_std
-
         self.ann_file_s3 = ann_file_s3
         self.data_infos_s3 = None
         if self.ann_file_s3 is not None:
@@ -1099,7 +1100,7 @@ class CustomAV2MapDataset(Dataset):
                 scene_list.append(frame)
 
             samples_list.extend(scene_list)
-        samples_list = samples_list[:20]
+        # samples_list = samples_list[:100:4]
         return samples_list
         
     def get_ann_info(self, index):
@@ -1123,10 +1124,18 @@ class CustomAV2MapDataset(Dataset):
         gt_names_3d  = []
         gt_labels_3d = []
 
+        anno_info = self.data_infos[index]['annotation']
+
+        gt_instance_xyz_list = []
+        for k, v in anno_info.items():
+            for l in v:
+                gt_instance_xyz_list.extend([np.array(l)[:, :3]])
+
         anns_results = dict(
             gt_bboxes_3d = gt_bboxes_3d,
             gt_labels_3d = gt_labels_3d,
-            gt_names = gt_names_3d
+            gt_names = gt_names_3d,
+            gt_instance_xyz_list=gt_instance_xyz_list,
         )
 
         return anns_results
@@ -1794,11 +1803,15 @@ class CustomAV2MapDataset(Dataset):
                 
                 single_case['vectors'].append(vec['pts'])
                 single_case['scores'].append(vec['score'])
+                # if vec['label'] == 0:
+                #     vec['label'] = 1
+                # elif vec['label'] == 1:
+                #     vec['label'] = 0
                 single_case['labels'].append(vec['label'])
        
             sample_token = self.data_infos[sample_id]['timestamp']
             pred_annos[sample_token] = single_case
-            self.draw(single_case, sample_id)
+            # self.draw(single_case, sample_id)
 
         nusc_submissions = {
             'meta': self.modality,
@@ -1829,7 +1842,7 @@ class CustomAV2MapDataset(Dataset):
         sample_s3 = self.data_infos_s3[sample_id]
 
         COLOR_MAP_GT = {  
-            'ped_crossing': (255, 0, 0),
+            'ped_crossing': (255, 255, 255),
             'divider': (0, 0, 255),
             'boundary': (0, 255, 0),
         }

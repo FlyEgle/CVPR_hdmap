@@ -79,6 +79,16 @@ model = dict(
         add_extra_convs='on_output',
         num_outs=_num_levels_,
         relu_before_extra_convs=True),
+
+    uvsegmentations_aux_head=dict(
+        type='uvSegmentationsAuxHead',
+        target_size=[256, 704], 
+        in_channels=_dim_, 
+        out_channels=64, 
+        scales=[32,],
+        loss_segmentations_type='xent_dice',
+    ),
+
     pts_bbox_head=dict(
         type='MapTRHead',
         bev_h=bev_h_,
@@ -218,8 +228,9 @@ train_pipeline = [
     dict(type='NormalizeMultiviewImage', **img_norm_cfg),
     dict(type='RandomScaleImageMultiViewImage', scales=[0.5]),
     dict(type='PadMultiViewImage', size_divisor=32),
+    dict(type='GenerateUVSegmentationForArgo', thickness=10), 
     dict(type='DefaultFormatBundle3D', class_names=class_names),
-    dict(type='CustomCollect3D', keys=['gt_bboxes_3d', 'gt_labels_3d', 'img'])
+    dict(type='CustomCollect3D', keys=['gt_bboxes_3d', 'gt_labels_3d', 'img', 'gt_uvsegmentations'])
 ]
 
 test_pipeline = [
@@ -243,7 +254,7 @@ test_pipeline = [
 ]
 
 data = dict(
-    samples_per_gpu=6,
+    samples_per_gpu=2,
     workers_per_gpu=16,
     train=dict(
         type=dataset_type,
@@ -302,7 +313,7 @@ data = dict(
 optimizer = dict(
     type='AdamW',
     # lr=1e-4,
-    lr=6e-4,
+    lr=3e-4,
     # lr=3e-4,
     # lr=3e-4,
     paramwise_cfg=dict(
@@ -337,7 +348,7 @@ lr_config = dict(
 total_epochs = 24
 # total_epochs = 50
 # evaluation = dict(interval=1, pipeline=test_pipeline)
-evaluation = dict(interval=4, pipeline=test_pipeline, metric='chamfer')
+evaluation = dict(interval=2, pipeline=test_pipeline, metric='chamfer')
 
 runner = dict(type='EpochBasedRunner', max_epochs=total_epochs)
 
@@ -349,12 +360,11 @@ log_config = dict(
         dict(
             type='WandbLoggerHook', 
             init_kwargs=dict(
-                project='For test',
+                project='For trick',
                 entity='cvpr_hdmap',
-                name='dev_maptr_bs6_800x1024_lr6e-4')
+                name='SegAuxLoss_maptr_xyz_xent_dice_bs2_lr3e-4_x8')
         ),
     ])
 fp16 = dict(loss_scale=512.)
-checkpoint_config = dict(interval=4)
-
-resume_from = '/home/jiangshengyin/shengyin/CVPR_hdmap/work_dirs/maptr_tiny_r50_24e_1gpus_av2_resize_intrinsic_shengyin/latest.pth'
+checkpoint_config = dict(interval=2)
+find_unused_parameters=True

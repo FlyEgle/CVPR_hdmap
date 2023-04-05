@@ -4,7 +4,7 @@ from mmdet3d.core import bbox3d2result
 from mmdet3d.models.detectors.mvx_two_stage import MVXTwoStageDetector
 from projects.mmdet3d_plugin.models.utils.grid_mask import GridMask
 from mmcv.runner import force_fp32, auto_fp16
-
+from mmdet3d.models import builder
 @DETECTORS.register_module()
 class MapTR(MVXTwoStageDetector):
     """MapTR.
@@ -28,7 +28,9 @@ class MapTR(MVXTwoStageDetector):
                  train_cfg=None,
                  test_cfg=None,
                  pretrained=None,
-                 video_test_mode=False
+                 video_test_mode=False,
+
+                uvsegmentations_aux_head=None,
                  ):
 
         super(MapTR,
@@ -51,6 +53,10 @@ class MapTR(MVXTwoStageDetector):
             'prev_angle': 0,
         }
 
+
+        self.uvsegmentations_aux_head = uvsegmentations_aux_head
+        if self.uvsegmentations_aux_head is not None:
+            self.uvsegmentations_aux_head = builder.build_head(uvsegmentations_aux_head)
 
     def extract_img_feat(self, img, img_metas, len_queue=None):
         """Extract features of images."""
@@ -176,6 +182,8 @@ class MapTR(MVXTwoStageDetector):
                       gt_bboxes_ignore=None,
                       img_depth=None,
                       img_mask=None,
+
+                      gt_uvsegmentations=None,
                       ):
         """Forward training function.
         Args:
@@ -213,6 +221,11 @@ class MapTR(MVXTwoStageDetector):
         img_metas = [each[len_queue-1] for each in img_metas]
         img_feats = self.extract_feat(img=img, img_metas=img_metas)
         losses = dict()
+        
+        if self.uvsegmentations_aux_head is not None:
+            seg = self.uvsegmentations_aux_head(img_feats, None)
+            seg_losses = self.uvsegmentations_aux_head.get_segmentation_loss(seg, gt_uvsegmentations)
+            losses.update(seg_losses)
         losses_pts = self.forward_pts_train(img_feats, gt_bboxes_3d,
                                             gt_labels_3d, img_metas,
                                             gt_bboxes_ignore, prev_bev)

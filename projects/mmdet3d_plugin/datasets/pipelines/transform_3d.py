@@ -3,6 +3,8 @@ from numpy import random
 import mmcv
 from mmdet.datasets.builder import PIPELINES
 from mmcv.parallel import DataContainer as DC
+import cv2
+from mmdet.datasets.pipelines import to_tensor
 
 @PIPELINES.register_module()
 class PadMultiViewImage(object):
@@ -39,6 +41,37 @@ class PadMultiViewImage(object):
         results['pad_shape'] = [img.shape for img in padded_img]
         results['pad_fixed_size'] = self.size
         results['pad_size_divisor'] = self.size_divisor
+
+
+        # import cv2
+        # import os
+        # for index, img in enumerate(results['img']):
+        #     img = np.uint8(img)
+        #     # img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        #     lidar2img = results['lidar2img'][index]
+
+        #     for instance in results['ann_info']['gt_instance_xyz_list']:
+        #         # instance = np.concatenate([instance, np.zeros((instance.shape[0], 1))], axis=1) 
+        #         instance = np.concatenate([instance, np.ones((instance.shape[0], 1))], axis=1)
+        #         instance = instance @ lidar2img.T
+        #         instance = instance[instance[:, 2] > 1e-5]
+
+        #         # if xyz1.shape[0] == 0:
+        #         #     continue
+        #         points_2d = instance[:, :2] / instance[:, 2:3]
+        #         # mask = (points_2d[:, 0] >= 0) & (points_2d[:, 0] < image.shape[1]) & (points_2d[:, 1] >= 0) & (points_2d[:, 1] < image.shape[0])
+        #         points_2d = points_2d.astype(int)
+                
+        #         img = cv2.polylines(img, points_2d[None], False, (0, 255, 0), 2)
+
+        #     # mmcv.mkdir_or_exist('instance_draw')
+        #     # import os
+        #     # cv2.imwrite(os.path.join('instance_draw', f'{index}.png'), img)
+
+        #     CAM_TYPE = ['ring_front_center', 'ring_front_left', 'ring_front_right', 'ring_rear_left', 'ring_rear_right', 'ring_side_left', 'ring_side_right']
+        #     dir = f"../padding_img_raw/{results['scene_token']}/{results['sample_idx']}"
+        #     mmcv.mkdir_or_exist(dir)
+        #     cv2.imwrite(os.path.join(dir, f"{CAM_TYPE[index]}.png" ), img)
 
 
 
@@ -330,4 +363,66 @@ class RandomScaleImageMultiViewImage(object):
     def __repr__(self):
         repr_str = self.__class__.__name__
         repr_str += f'(size={self.scales}, '
+        return repr_str
+
+
+
+
+
+@PIPELINES.register_module()
+class GenerateUVSegmentationForArgo(object):
+
+    def __init__(self, thickness=10):
+        self.thickness = thickness
+
+    def _generate_uvsegmentation(self, results):
+        """generate uvsegmentation."""
+        gt_uvsegmentations = []
+        for img in results['img']:
+            gt_uvsegmentation = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
+
+        for index, img in enumerate(results['img']):
+            gt_uvsegmentation = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
+            lidar2img = results['lidar2img'][index]
+            for instance in results['ann_info']['gt_instance_xyz_list']:
+                # instance = np.concatenate([instance, np.zeros((instance.shape[0], 1))], axis=1) 
+                instance = np.concatenate([instance, np.ones((instance.shape[0], 1))], axis=1)
+               
+                instance = instance @ lidar2img.T
+                instance = instance[instance[:, 2] > 1e-5]
+                points_2d = instance[:, :2] / instance[:, 2:3]
+                points_2d = points_2d.astype(int)
+                
+                gt_uvsegmentation = cv2.polylines(gt_uvsegmentation, points_2d[None], False, (255, 255, 255), thickness=self.thickness)
+
+            # # 过滤掉 padding 的那部分区域 
+            # gt_uvsegmentation[results['before_pad_shape'][index][0]:] = 0
+            # gt_uvsegmentation[:, results['before_pad_shape'][index][1]:] =0
+      
+            gt_uvsegmentations.append(gt_uvsegmentation.astype(np.float64))
+            
+            # # # 可视化 gt_uvsegmentation 
+            # import os
+            # CAM_TYPE = ['ring_front_center', 'ring_front_left', 'ring_front_right', 'ring_rear_left', 'ring_rear_right', 'ring_side_left', 'ring_side_right']
+            # dir = f"../gt_uvsegmentations_raw/{results['scene_token']}/{results['sample_idx']}"
+            # mmcv.mkdir_or_exist(dir)
+            # cv2.imwrite(os.path.join(dir, f"{CAM_TYPE[index]}.png" ), gt_uvsegmentation)
+
+        results['gt_uvsegmentations'] = DC(to_tensor(gt_uvsegmentations), stack=True) 
+
+        # results['gt_uvsegmentations'] = gt_uvsegmentations
+       
+    def __call__(self, results):
+        """Call function to generate uvsegmentation gt for aux-head-loss.
+        Args:
+            results (dict): Result dict from loading pipeline.
+        Returns:
+            dict: Updated result dict.
+        """
+        self._generate_uvsegmentation(results)
+        return results
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__
+        repr_str += f'thickness={self.thickness}, '
         return repr_str
