@@ -257,9 +257,9 @@ class uvSegmentationsAuxHead(nn.Module):
         
         # ((B*T), C, H, W)
       
-        outcat = torch.cat(out_list, dim=1)
-        out = self.outconv(outcat)
-
+        # outcat = torch.cat(out_list, dim=1)
+        # out = self.outconv(outcat)
+        out = out_list[0]
         return out 
     
     def get_segmentation_loss(self, x, target):
@@ -286,7 +286,7 @@ class uvSegmentationsAuxHead(nn.Module):
             # else:
             #     raise ValueError(f"unsupported loss: {self.loss}")
             self.iou[f'{name}/{"segmentations_iou"}'] = self.get_batch_iou(x[:, index], target[:, index])
-            losses[f"{name}/{self.loss_segmentations_type}"] = loss
+            losses[f"{name}/loss_{self.loss_segmentations_type}"] = loss
         return losses
     
     def get_batch_iou(self, pred_map, gt_map):
