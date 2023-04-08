@@ -229,6 +229,8 @@ class uvSegmentationsAuxHead(nn.Module):
         )
 
         self.outconv = nn.Conv2d(len(scales), 1, 1)
+
+        self.iou = {}
     
 
     def _xent_loss(self, x, target):
@@ -270,6 +272,8 @@ class uvSegmentationsAuxHead(nn.Module):
         # print("view x shape: ", x.shape)
         # print("target shape: ", target.shape)
         losses = {}
+        down_sample = nn.Upsample(size=(h, w), mode='bilinear')     # 将 gt-size 转换和 x一致
+        target = down_sample(target)
 
         for index, name in enumerate(self.camera_type):
             loss = self.loss_segmentations(x[:, index], target[:, index])
@@ -281,9 +285,21 @@ class uvSegmentationsAuxHead(nn.Module):
             #     loss = bceloss + diceloss
             # else:
             #     raise ValueError(f"unsupported loss: {self.loss}")
+            self.iou[f'{name}/{"segmentations_iou"}'] = self.get_batch_iou(x[:, index], target[:, index])
             losses[f"{name}/{self.loss_segmentations_type}"] = loss
         return losses
-       
+    
+    def get_batch_iou(self, pred_map, gt_map):
+  
+        with torch.no_grad():
+            pred_map = pred_map.cpu().bool()
+            gt_map = gt_map.cpu().bool()
+
+            intersect = (pred_map & gt_map).sum().float()
+            union = (pred_map | gt_map).sum().float()
+
+            iou = intersect / (union + 1e-7) 
+            return iou
 
 
 class AuxBEVSegmentationHead(nn.Module):
