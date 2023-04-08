@@ -337,7 +337,7 @@ lr_config = dict(
 total_epochs = 24
 # total_epochs = 50
 # evaluation = dict(interval=1, pipeline=test_pipeline)
-evaluation = dict(interval=4, pipeline=test_pipeline, metric='chamfer')
+evaluation = dict(interval=1, pipeline=test_pipeline, metric='chamfer')
 
 runner = dict(type='EpochBasedRunner', max_epochs=total_epochs)
 
@@ -357,4 +357,4 @@ log_config = dict(
 fp16 = dict(loss_scale=512.)
 checkpoint_config = dict(interval=4)
 
-resume_from = '/home/jiangshengyin/shengyin/CVPR_hdmap/work_dirs/maptr_tiny_r50_24e_1gpus_av2_resize_intrinsic_shengyin/latest.pth'
+# resume_from = '/home/jiangshengyin/shengyin/CVPR_hdmap/work_dirs/maptr_tiny_r50_24e_1gpus_av2_resize_intrinsic_shengyin/latest.pth'

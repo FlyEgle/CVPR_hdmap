@@ -1336,17 +1336,18 @@ class CustomAV2MapDataset(Dataset):
                 # TODO: this is hard code, need modify 
                 # mmcv.imread -> (h, w, c)
                 
-                if self.ann_file_s3 is not None:
-                    img_height, img_width, _ = self._imread(image_path).shape
+                # if self.ann_file_s3 is not None:
+                #     img_height, img_width, _ = self._imread(image_path).shape
 
-                else:
-                    img_height, img_width, _ = mmcv.imread(os.path.join(prefix_path,
-                                                                    cam_info["image_path"])).shape 
+                # else:
+                #     img_height, img_width, _ = mmcv.imread(os.path.join(prefix_path,
+                #                                                     cam_info["image_path"])).shape 
+               
                 # constant_resize_shape = (1600, 900)
-                constant_resize_shape = (2048, 1550)
+                # constant_resize_shape = (2048, 1550)
 
-                resize_ratio = [constant_resize_shape[0] / img_width, 
-                constant_resize_shape[1] / img_height]
+                # resize_ratio = [constant_resize_shape[0] / img_width, 
+                # constant_resize_shape[1] / img_height]
 
                 # obtain lidar to image transformation matrix, av2 is ego2cam
                 ego2cam = cam_info["extrinsic"]     # 4x4 eog->cam
@@ -1389,7 +1390,7 @@ class CustomAV2MapDataset(Dataset):
                 # lidar/ego 2 uv
                 intrinsic = np.array(cam_info['intrinsic'])
                 # change intrinsic beof the image size have been change
-                intrinsic = intrinsic_project(resize_ratio, intrinsic) # TODO: hard code
+                # intrinsic = intrinsic_project(resize_ratio, intrinsic) # TODO: hard code
                 viewpad = np.eye(4)
                 viewpad[:intrinsic.shape[0], :intrinsic.shape[1]] = intrinsic
                 lidar2img_rt = viewpad @ lidar2cam_rt
@@ -1749,23 +1750,25 @@ class CustomAV2MapDataset(Dataset):
 
         result_files, tmp_dir = self.format_results(results, jsonfile_prefix)
         self.evaluator = VectorEvaluate(self.ann_file)
-        submisson_vector_path = result_files['pts_bbox']
-        submisson_vector = mmcv.load(submisson_vector_path)
-        submisson_vector['meta'] = {
-                'use_lidar': False,
-                'use_camera': True,
-                "use_external": False,                     
-                "output_format": "vector",                  
-                'use_external': False,
 
-                # NOTE: please fill the information below
-                'method': 'maptr',                            
-                'authors': ['JiangShengyin'],                          
-                'e-mail': 'shengyin@bupt.edu.cn',                            
-                'institution / company': 'bupt',         
-                'country / region': 'china',                  
-        }
-        mmcv.dump(submisson_vector, 'submisson_vector.json')
+        # 提交成绩
+        # submisson_vector_path = result_files['pts_bbox']
+        # submisson_vector = mmcv.load(submisson_vector_path)
+        # submisson_vector['meta'] = {
+        #         'use_lidar': False,
+        #         'use_camera': True,
+        #         "use_external": False,                     
+        #         "output_format": "vector",                  
+        #         'use_external': False,
+
+        #         # NOTE: please fill the information below
+        #         'method': 'maptr',                            
+        #         'authors': ['JiangShengyin'],                          
+        #         'e-mail': 'shengyin@bupt.edu.cn',                            
+        #         'institution / company': 'bupt',         
+        #         'country / region': 'china',                  
+        # }
+        # mmcv.dump(submisson_vector, 'submisson_vector.json')
         results_dict = self.evaluator.evaluate(result_files['pts_bbox'], logger=logger)
 
         if tmp_dir is not None:

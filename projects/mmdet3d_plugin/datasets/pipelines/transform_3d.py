@@ -43,6 +43,7 @@ class PadMultiViewImage(object):
         results['pad_size_divisor'] = self.size_divisor
 
 
+        # ===== 可视化
         # import cv2
         # import os
         # for index, img in enumerate(results['img']):
@@ -69,7 +70,7 @@ class PadMultiViewImage(object):
         #     # cv2.imwrite(os.path.join('instance_draw', f'{index}.png'), img)
 
         #     CAM_TYPE = ['ring_front_center', 'ring_front_left', 'ring_front_right', 'ring_rear_left', 'ring_rear_right', 'ring_side_left', 'ring_side_right']
-        #     dir = f"../padding_img_raw/{results['scene_token']}/{results['sample_idx']}"
+        #     dir = f"../padding_img/{results['scene_token']}/{results['sample_idx']}"
         #     mmcv.mkdir_or_exist(dir)
         #     cv2.imwrite(os.path.join(dir, f"{CAM_TYPE[index]}.png" ), img)
 

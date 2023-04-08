@@ -8,31 +8,19 @@ plugin_dir = 'projects/mmdet3d_plugin/'
 
 # If point cloud range is changed, the models should also change their point
 # cloud range accordingly
-# point_cloud_range = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0]
-# point_cloud_range = [-15.0, -30.0, -2.0, 15.0, 30.0, 2.0]
+
 point_cloud_range = [-30.0, -15.0, -2.0, 30.0, 15.0, 2.0]
 voxel_size = [0.15, 0.15, 4]
 
 img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 
-# For nuScenes we usually do 10-class detection
-# class_names = [
-#     'car', 'truck', 'construction_vehicle', 'bus', 'trailer', 'barrier',
-#     'motorcycle', 'bicycle', 'pedestrian', 'traffic_cone'
-# ]
 class_names = [
     "ped_crossing", "divider", "boundary"
 ]
 # map has classes: divider, ped_crossing, boundary
 map_classes = ['ped_crossing', 'divider','boundary']
 
-# class_names = [
-#     "divider", "ped_crossing", "boundary"
-# ]
-# map_classes = ['divider', 'ped_crossing','boundary']
-# fixed_ptsnum_per_line = 20
-# map_classes = ['divider',]
 fixed_ptsnum_per_gt_line = 20 # now only support fixed_pts > 0
 fixed_ptsnum_per_pred_line = 20
 eval_use_same_gt_sample_num_flag=True
@@ -49,10 +37,7 @@ _dim_ = 256
 _pos_dim_ = _dim_//2
 _ffn_dim_ = _dim_*2
 _num_levels_ = 1
-# bev_h_ = 50
-# bev_w_ = 50
-# bev_h_ = 200
-# bev_w_ = 100
+
 bev_h_ = 100
 bev_w_ = 200
 queue_length = 1 # each sequence contains `queue_length` frames.
@@ -79,16 +64,6 @@ model = dict(
         add_extra_convs='on_output',
         num_outs=_num_levels_,
         relu_before_extra_convs=True),
-
-    uvsegmentations_aux_head=dict(
-        type='uvSegmentationsAuxHead',
-        target_size=[256, 704], 
-        in_channels=_dim_, 
-        out_channels=64, 
-        scales=[32,],
-        loss_segmentations_type='xent_dice',
-    ),
-
     pts_bbox_head=dict(
         type='MapTRHead',
         bev_h=bev_h_,
@@ -168,7 +143,6 @@ model = dict(
                                      'ffn', 'norm')))),
         bbox_coder=dict(
             type='MapTRNMSFreeCoder',
-            # post_center_range=[-61.2, -61.2, -10.0, 61.2, 61.2, 10.0],
             # post_center_range=[-20, -35, -20, -35, 20, 35, 20, 35], # xmin, ymin, 
             post_center_range = [-35, -20, -35, -20, 35, 20, 35, 20],
             # post_center_range = None, # default
@@ -220,24 +194,23 @@ file_client_args = dict(backend='disk')
 
 
 train_pipeline = [
-    dict(type='LoadMultiViewImageFromFiles', to_float32=True),
+    dict(type='LoadMultiViewImageFromFilesForAv2', to_float32=True),
     dict(type='PhotoMetricDistortionMultiViewImage'),
     dict(type='LoadAnnotations3D', with_bbox_3d=True, with_label_3d=True, with_attr_label=False),
     # dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
     # dict(type='ObjectNameFilter', classes=class_names),
     dict(type='NormalizeMultiviewImage', **img_norm_cfg),
-    
+    dict(type='ResizeMultiViewImageForArgo',resize=(2048, 1550)),
     dict(type='RandomScaleImageMultiViewImage', scales=[0.5]),
     dict(type='PadMultiViewImage', size_divisor=32),
-    dict(type='GenerateUVSegmentationForArgo', thickness=10), 
     dict(type='DefaultFormatBundle3D', class_names=class_names),
-    dict(type='CustomCollect3D', keys=['gt_bboxes_3d', 'gt_labels_3d', 'img', 'gt_uvsegmentations'])
+    dict(type='CustomCollect3D', keys=['gt_bboxes_3d', 'gt_labels_3d', 'img'])
 ]
 
 test_pipeline = [
-    dict(type='LoadMultiViewImageFromFiles', to_float32=True),
+    dict(type='LoadMultiViewImageFromFilesForAv2', to_float32=True),
     dict(type='NormalizeMultiviewImage', **img_norm_cfg),
-   
+    dict(type='ResizeMultiViewImageForArgo',resize=(2048, 1550)), 
     dict(
         type='MultiScaleFlipAug3D',
         img_scale=(2048, 1550),
@@ -255,7 +228,7 @@ test_pipeline = [
 ]
 
 data = dict(
-    samples_per_gpu=2,
+    samples_per_gpu=6,
     workers_per_gpu=16,
     train=dict(
         type=dataset_type,
@@ -313,27 +286,13 @@ data = dict(
 
 optimizer = dict(
     type='AdamW',
-    # lr=1e-4,
-    lr=3e-4,
-    # lr=3e-4,
+    lr=6e-4,
     # lr=3e-4,
     paramwise_cfg=dict(
         custom_keys={
             'img_backbone': dict(lr_mult=0.1),
         }),
     weight_decay=0.01)
-
-
-# optimizer = dict(
-#     type='Adam',
-#     # lr=6e-4,
-#     lr=1e-3,
-#     # lr=3e-4,
-#     paramwise_cfg=dict(
-#         custom_keys={
-#             'img_backbone': dict(lr_mult=0.1),
-#         }),
-#     weight_decay=0.0001)
 
 
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
@@ -349,7 +308,7 @@ lr_config = dict(
 total_epochs = 24
 # total_epochs = 50
 # evaluation = dict(interval=1, pipeline=test_pipeline)
-evaluation = dict(interval=2, pipeline=test_pipeline, metric='chamfer')
+evaluation = dict(interval=4, pipeline=test_pipeline, metric='chamfer')
 
 runner = dict(type='EpochBasedRunner', max_epochs=total_epochs)
 
@@ -361,11 +320,15 @@ log_config = dict(
         dict(
             type='WandbLoggerHook', 
             init_kwargs=dict(
-                project='For trick',
+                project='For test',
                 entity='cvpr_hdmap',
-                name='SegAuxLoss_maptr_xyz_xent_dice_bs2_lr3e-4_x8')
+                name='dev_maptr_bs6_800x1024_lr6e-4_adjust')
         ),
     ])
+
 fp16 = dict(loss_scale=512.)
-checkpoint_config = dict(interval=2)
+checkpoint_config = dict(interval=4)
+
+resume_from=None
+
 find_unused_parameters=True
