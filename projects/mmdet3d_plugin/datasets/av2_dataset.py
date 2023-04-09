@@ -907,7 +907,7 @@ class CustomAV2MapDataset(Dataset):
                  modality=None,
                  box_type_3d='LiDAR',
                  filter_empty_gt=True,
-                 
+                  
                  ann_file_s3=None,
                  data_infos_s3=None, 
                  *args, 
@@ -959,15 +959,9 @@ class CustomAV2MapDataset(Dataset):
         self.is_vis_on_test = False
         self.noise = noise
         self.noise_std = noise_std
-        self.ann_file_s3 = ann_file_s3
-        self.data_infos_s3 = None
-        if self.ann_file_s3 is not None:
-            data_infos = mmcv.load(self.ann_file_s3, file_format='pkl')
-            if isinstance(data_infos, dict):
-                # self.raw_data_keys = list(data_infos.keys())
-                data_infos = list(data_infos.values())
-            self.data_infos_s3 = data_infos
-        
+        self._load_annotations_s3(ann_file_s3)
+
+     
     @classmethod
     def get_map_classes(cls, map_classes=None):
         """Get class names of current dataset.
@@ -1052,6 +1046,17 @@ class CustomAV2MapDataset(Dataset):
 
         # example.update(dict(gt_anns=anns_results['gt_anns']))
         return example
+    
+    def _load_annotations_s3(self, ann_file_s3):
+        self.ann_file_s3 = ann_file_s3
+        self.data_infos_s3 = None
+        if self.ann_file_s3 is not None:
+            data_infos = mmcv.load(self.ann_file_s3, file_format='pkl')
+            if isinstance(data_infos, dict):
+                # self.raw_data_keys = list(data_infos.keys())
+                data_infos = list(data_infos.values())
+            self.data_infos_s3 = data_infos
+
 
     def _load_annotations(self, ann_file):
         # return super().load_annotations(ann_file)
@@ -1320,11 +1325,10 @@ class CustomAV2MapDataset(Dataset):
             input_dict["camera_intrinsics"] = []
             # input_dict["cam_extrinsics"] =  []
             for cam_type, cam_info in info["sensor"].items():
-                folder = self.map_ann_file.split("/")[-1].split("_")[0]
-                prefix = self.map_ann_file.split("/OpenLaneV2")[0] + "/OpenLaneV2"  # hard code
-                # prefix = self.map_ann_file.split("/")[-1].split("_")[0]
-                prefix_path = os.path.join(prefix, folder)
                 if self.ann_file_s3 is None:                # by shengyin
+                    folder = self.map_ann_file.split("/")[-1].split("_")[0]
+                    prefix = self.map_ann_file.split("/OpenLaneV2")[0] + "/OpenLaneV2"  # hard code
+                    prefix_path = os.path.join(prefix, folder)
                     image_path = os.path.join(prefix_path, cam_info["image_path"])
                 else:
                     image_path = self.data_infos_s3[index]['sensor'][cam_type]['image_path'].replace(

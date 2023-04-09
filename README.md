@@ -35,5 +35,5 @@ python tools/maptr/vis_pred_av2.py config_path ckpt_path
 
 | Config | Ped_crossing | Divider | Boundary| mAP| | 
 | :---: | :---: | :---: | :---: | :---:|:---:|
-| maptr_tiny_r50_24e_800x1024_seg | 50.79 | 61.94 | 60.20 | 57.64
+| maptr_tiny_r50_24e_800x1024 | 50.79 | 61.94 | 60.20 | 57.64
 

@@ -186,7 +186,7 @@ model = dict(
 
 # dataset_type = 'CustomNuScenesLocalMapDataset'
 # ================================test ==================================
-dataset_type = "CustomAV2MapDataset"
+dataset_type = "CustomAV2MapDatasetGather"
 data_root = 'data/'
 # data_root = "/cpfs01/user/jiangmingchao/work/dataset/cvpr2023/OpenLaneV2/"
 # data_root = "/cpfs01/user/jiangmingchao/work/code/BEVFormer/data/nuscenes/"
@@ -228,15 +228,15 @@ test_pipeline = [
 ]
 
 data = dict(
-    samples_per_gpu=1,
+    samples_per_gpu=6,
     workers_per_gpu=16,
     train=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file='./data/train_annotations.json',
-        ann_file_s3='./data/openlanev2_av2_train_infos_v0.1.pkl',
+        ann_file=['./data/train_annotations.json', './data/val_annotations.json'],
+        ann_file_s3=['./data/openlanev2_av2_train_infos_v0.1.pkl', './data/openlanev2_av2_val_infos_v0.1.pkl'],
         # ann_file=data_root + 'nuscenes_infos_temporal_train.pkl',
-        map_ann_file = data_root + "train_annotations.json",
+        map_ann_file = [data_root + "train_annotations.json", data_root + 'val_annotations.json'],
         out_ann_file = None,
         pipeline=train_pipeline,
         classes=class_names,
@@ -255,9 +255,9 @@ data = dict(
         box_type_3d='LiDAR'),
     val=dict(type=dataset_type,
             data_root=data_root,
-            ann_file='./data/val_annotations.json',
-            ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
-             map_ann_file=data_root + 'val_annotations.json',
+            ann_file=['./data/val_annotations.json'],
+            ann_file_s3=['./data/openlanev2_av2_val_infos_v0.1.pkl'],
+             map_ann_file=[data_root + 'val_annotations.json'],
              out_ann_file = data_root + 'av2_map_anns_val.json',
             #  map_ann_file=data_root + 'nuscenes_map_anns_val.json',
              pipeline=test_pipeline,  bev_size=(bev_h_, bev_w_),
@@ -269,9 +269,9 @@ data = dict(
              classes=class_names, modality=input_modality, samples_per_gpu=1),
     test=dict(type=dataset_type,
               data_root=data_root,
-            ann_file='./data/val_annotations.json',
-            ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
-              map_ann_file=data_root + 'val_annotations.json',
+            ann_file=['./data/val_annotations.json'],
+            ann_file_s3=['./data/openlanev2_av2_val_infos_v0.1.pkl'],
+              map_ann_file=[data_root + 'val_annotations.json'],
             #   map_ann_file=data_root + 'nuscenes_map_anns_val.json',
               pipeline=test_pipeline, bev_size=(bev_h_, bev_w_),
               pc_range=point_cloud_range,
@@ -308,9 +308,8 @@ lr_config = dict(
 total_epochs = 24
 # total_epochs = 50
 # evaluation = dict(interval=1, pipeline=test_pipeline)
-evaluation = dict(interval=4, pipeline=test_pipeline, metric='chamfer')
+evaluation = dict(interval=2, pipeline=test_pipeline, metric='chamfer')
 runner = dict(type='EpochBasedRunner', max_epochs=total_epochs)
-
 
 log_config = dict(
     interval=50,
@@ -327,7 +326,7 @@ log_config = dict(
     ])
 
 fp16 = dict(loss_scale=512.)
-checkpoint_config = dict(interval=4)
+checkpoint_config = dict(interval=2)
 
 resume_from=None
 find_unused_parameters=True
