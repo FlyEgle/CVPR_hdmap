@@ -186,7 +186,7 @@ model = dict(
 
 # dataset_type = 'CustomNuScenesLocalMapDataset'
 # ================================test ==================================
-dataset_type = "CustomAV2MapDatasetGather"
+dataset_type = "CustomAV2MapDataset"
 data_root = 'data/'
 # data_root = "/cpfs01/user/jiangmingchao/work/dataset/cvpr2023/OpenLaneV2/"
 # data_root = "/cpfs01/user/jiangmingchao/work/code/BEVFormer/data/nuscenes/"
@@ -227,16 +227,40 @@ test_pipeline = [
         ])
 ]
 
-data = dict(
-    samples_per_gpu=6,
-    workers_per_gpu=16,
-    train=dict(
+
+train_dataset_A = dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=['./data/train_annotations.json', './data/val_annotations.json'],
-        ann_file_s3=['./data/openlanev2_av2_train_infos_v0.1.pkl', './data/openlanev2_av2_val_infos_v0.1.pkl'],
+        ann_file='./data/train_annotations.json',
+        ann_file_s3='./data/openlanev2_av2_train_infos_v0.1.pkl',
         # ann_file=data_root + 'nuscenes_infos_temporal_train.pkl',
-        map_ann_file = [data_root + "train_annotations.json", data_root + 'val_annotations.json'],
+        map_ann_file = data_root + "train_annotations.json",
+        out_ann_file = None,
+        pipeline=train_pipeline,
+        classes=class_names,
+        modality=input_modality,
+        test_mode=False,
+        use_valid_flag=True,
+        bev_size=(bev_h_, bev_w_),
+        pc_range=point_cloud_range,
+        fixed_ptsnum_per_line=fixed_ptsnum_per_gt_line,
+        eval_use_same_gt_sample_num_flag=eval_use_same_gt_sample_num_flag,
+        padding_value=-10000,
+        map_classes=map_classes,
+        queue_length=queue_length,
+        # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
+        # and box_type_3d='Depth' in sunrgbd and scannet dataset.
+        box_type_3d='LiDAR')
+
+
+
+train_dataset_B = dict(
+        type=dataset_type,
+        data_root=data_root,
+        ann_file='./data/val_annotations.json',
+        ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
+        # ann_file=data_root + 'nuscenes_infos_temporal_train.pkl',
+        map_ann_file = data_root + "val_annotations.json",
         out_ann_file = None,
         pipeline=train_pipeline,
         classes=class_names,
@@ -253,11 +277,21 @@ data = dict(
         # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
         # and box_type_3d='Depth' in sunrgbd and scannet dataset.
         box_type_3d='LiDAR'),
+
+
+
+
+data = dict(
+    samples_per_gpu=6,
+    workers_per_gpu=16,
+    train=[
+        train_dataset_A, train_dataset_B,
+    ], 
     val=dict(type=dataset_type,
             data_root=data_root,
-            ann_file=['./data/val_annotations.json'],
-            ann_file_s3=['./data/openlanev2_av2_val_infos_v0.1.pkl'],
-             map_ann_file=[data_root + 'val_annotations.json'],
+            ann_file='./data/val_annotations.json',
+            ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
+             map_ann_file=data_root + 'val_annotations.json',
              out_ann_file = data_root + 'av2_map_anns_val.json',
             #  map_ann_file=data_root + 'nuscenes_map_anns_val.json',
              pipeline=test_pipeline,  bev_size=(bev_h_, bev_w_),
@@ -268,10 +302,10 @@ data = dict(
              map_classes=map_classes,
              classes=class_names, modality=input_modality, samples_per_gpu=1),
     test=dict(type=dataset_type,
-              data_root=data_root,
-            ann_file=['./data/val_annotations.json'],
-            ann_file_s3=['./data/openlanev2_av2_val_infos_v0.1.pkl'],
-              map_ann_file=[data_root + 'val_annotations.json'],
+            data_root=data_root,
+            ann_file='./data/val_annotations.json',
+            ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
+              map_ann_file=data_root + 'val_annotations.json',
             #   map_ann_file=data_root + 'nuscenes_map_anns_val.json',
               pipeline=test_pipeline, bev_size=(bev_h_, bev_w_),
               pc_range=point_cloud_range,
