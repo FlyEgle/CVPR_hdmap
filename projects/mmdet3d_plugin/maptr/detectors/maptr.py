@@ -4,7 +4,7 @@ from mmdet3d.core import bbox3d2result
 from mmdet3d.models.detectors.mvx_two_stage import MVXTwoStageDetector
 from projects.mmdet3d_plugin.models.utils.grid_mask import GridMask
 from mmcv.runner import force_fp32, auto_fp16
-from mmdet3d.models import builder
+import torch
 @DETECTORS.register_module()
 class MapTR(MVXTwoStageDetector):
     """MapTR.
@@ -56,7 +56,12 @@ class MapTR(MVXTwoStageDetector):
 
         self.uvsegmentations_aux_head = uvsegmentations_aux_head
         if self.uvsegmentations_aux_head is not None:
-            self.uvsegmentations_aux_head = builder.build_head(uvsegmentations_aux_head)
+            try:
+                from mmseg.models import builder
+                self.uvsegmentations_aux_head = builder.build_head(uvsegmentations_aux_head)
+            except:
+                from mmdet3d.models import builder
+                self.uvsegmentations_aux_head = builder.build_head(uvsegmentations_aux_head)
 
     def extract_img_feat(self, img, img_metas, len_queue=None):
         """Extract features of images."""
@@ -223,8 +228,14 @@ class MapTR(MVXTwoStageDetector):
         losses = dict()
         
         if self.uvsegmentations_aux_head is not None:
-            seg = self.uvsegmentations_aux_head(img_feats, None)
-            seg_losses = self.uvsegmentations_aux_head.get_segmentation_loss(seg, gt_uvsegmentations)
+            img_feats_for_seg = [] 
+            for i in range(len(img_feats)):
+                img_feats_for_seg.append(img_feats[i].flatten(0, 1))
+
+            seg = self.uvsegmentations_aux_head(img_feats_for_seg)
+            gt_uvsegmentations = gt_uvsegmentations.flatten(0, 1).unsqueeze(1) 
+            gt_uvsegmentations = gt_uvsegmentations.to(torch.long)
+            seg_losses =  self.uvsegmentations_aux_head.losses(seg, gt_uvsegmentations) 
             losses.update(seg_losses)
         losses_pts = self.forward_pts_train(img_feats, gt_bboxes_3d,
                                             gt_labels_3d, img_metas,

@@ -399,8 +399,9 @@ class GenerateUVSegmentationForArgo(object):
             # # 过滤掉 padding 的那部分区域 
             # gt_uvsegmentation[results['before_pad_shape'][index][0]:] = 0
             # gt_uvsegmentation[:, results['before_pad_shape'][index][1]:] =0
-      
-            gt_uvsegmentations.append(gt_uvsegmentation.astype(np.float64))
+            gt_uvsegmentation = gt_uvsegmentation.astype(np.float64)
+            gt_uvsegmentation = gt_uvsegmentation / 255.0 
+            gt_uvsegmentations.append(gt_uvsegmentation)
             
             # # # 可视化 gt_uvsegmentation 
             # import os
