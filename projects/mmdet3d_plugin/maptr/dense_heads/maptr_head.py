@@ -50,6 +50,24 @@ def denormalize_2d_pts(pts, pc_range):
     new_pts[...,1:2] = (pts[...,1:2]*(pc_range[4] -
                             pc_range[1]) + pc_range[1])
     return new_pts
+
+
+class SELayer(nn.Module):
+
+    def __init__(self, in_channels, out_channels, act_layer=nn.ReLU, gate_layer=nn.Sigmoid):
+        super().__init__()
+        self.conv_reduce = nn.Conv2d(in_channels, out_channels, 3, 1, 1, bias=True)   # 源代码是1x1，但是我这里改成了 3x3
+        self.act1 = act_layer()
+        self.conv_expand = nn.Conv2d(out_channels, out_channels, 1, bias=True)
+        self.gate = gate_layer()
+
+    def forward(self, x, x_se):
+        x_se = self.conv_reduce(x_se)
+        x_se = self.act1(x_se)
+        x_se = self.conv_expand(x_se)
+        return x * self.gate(x_se)
+    
+
 @HEADS.register_module()
 class MapTRHead(DETRHead):
     """Head of Detr3D.
@@ -84,6 +102,8 @@ class MapTRHead(DETRHead):
                              loss_src_weight=1.0, 
                              loss_dst_weight=1.0),
                  loss_dir=dict(type='PtsDirCosLoss', loss_weight=2.0),
+
+                 with_ipm=False,
                  **kwargs):
 
         self.bev_h = bev_h
@@ -121,7 +141,8 @@ class MapTRHead(DETRHead):
         self.num_pts_per_gt_vec = num_pts_per_gt_vec
         self.dir_interval = dir_interval
         
-        
+
+
         super(MapTRHead, self).__init__(
             *args, transformer=transformer, **kwargs)
         self.code_weights = nn.Parameter(torch.tensor(
@@ -134,6 +155,10 @@ class MapTRHead(DETRHead):
         self.num_pts_per_vec = num_pts_per_vec
         self.num_pts_per_gt_vec = num_pts_per_gt_vec
         self._init_layers()
+
+        self.with_ipm = with_ipm
+        if self.with_ipm:
+            self.with_ipm = SELayer(in_channels=16, out_channels=256)
 
     def _init_layers(self):
         """Initialize classification branch and regression branch of head."""
@@ -196,7 +221,7 @@ class MapTRHead(DETRHead):
     
     # @auto_fp16(apply_to=('mlvl_feats'))
     @force_fp32(apply_to=('mlvl_feats', 'prev_bev'))
-    def forward(self, mlvl_feats, img_metas, prev_bev=None,  only_bev=False):
+    def forward(self, mlvl_feats, img_metas, prev_bev=None,  only_bev=False, ipm_feature=None):
         """Forward function.
         Args:
             mlvl_feats (tuple[Tensor]): Features from the upstream
@@ -226,7 +251,11 @@ class MapTRHead(DETRHead):
 
         bev_mask = torch.zeros((bs, self.bev_h, self.bev_w),
                                device=bev_queries.device).to(dtype)
+        
         bev_pos = self.positional_encoding(bev_mask).to(dtype)
+
+        if self.with_ipm:       # 用 ipm_feature 对 bev_pos 增强，引导query
+            bev_pos = self.with_ipm(bev_pos, ipm_feature)
 
         if only_bev:  # only use encoder to obtain BEV features, TODO: refine the workaround
             return self.transformer.get_bev_features(
@@ -255,7 +284,6 @@ class MapTRHead(DETRHead):
                 img_metas=img_metas,
                 prev_bev=prev_bev
         )
-
         bev_embed, hs, init_reference, inter_references = outputs
         hs = hs.permute(0, 2, 1, 3)
         outputs_classes = []

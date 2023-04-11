@@ -76,6 +76,7 @@ class PadMultiViewImage(object):
 
 
 
+
     def __call__(self, results):
         """Call function to pad images, masks, semantic segmentation maps.
         Args:

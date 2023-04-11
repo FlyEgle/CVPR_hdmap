@@ -214,6 +214,8 @@ class DefaultFormatBundle3D(DefaultFormatBundle):
                 continue
             results[key] = DC(to_tensor(results[key]), stack=False)
 
+        results['ego2img'] = DC(to_tensor(results["lidar2img"]), stack=True) 
+
         if self.with_gt:
             # Clean GT bboxes in the final
             if 'gt_bboxes_3d_mask' in results:

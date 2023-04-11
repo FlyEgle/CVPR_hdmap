@@ -57,6 +57,7 @@ bev_h_ = 100
 bev_w_ = 200
 queue_length = 1 # each sequence contains `queue_length` frames.
 
+
 model = dict(
     type='MapTR',
     use_grid_mask=True,
@@ -71,6 +72,11 @@ model = dict(
         norm_cfg=dict(type='BN', requires_grad=False),
         norm_eval=True,
         style='pytorch'),
+    
+    view_transformer=dict(
+        type='IPM',
+    ),
+
     img_neck=dict(
         type='FPN',
         in_channels=[2048],
@@ -79,18 +85,34 @@ model = dict(
         add_extra_convs='on_output',
         num_outs=_num_levels_,
         relu_before_extra_convs=True),
-
-    uvsegmentations_aux_head=dict(
-        type='uvSegmentationsAuxHead',
-        target_size=[256, 704], 
-        in_channels=_dim_, 
-        out_channels=64, 
-        scales=[8,],
-        loss_segmentations_type='xent_dice',
-    ),
+    
+    # uvsegmentations_aux_head=dict(
+    #     type='DeepLabV3CustomHead',
+    #     in_channels=_dim_,
+    #     in_index=0,
+    #     channels=_dim_ // 2,
+    #     dilations=(1, 12, 24, 36),
+    #     c1_in_channels=_dim_,
+    #     c1_channels=_dim_ // 2,
+    #     dropout_ratio=0.1,
+    #     num_classes=2,      # 两种类别，前景或者背景
+    #     norm_cfg=dict(type='SyncBN', requires_grad=True),
+    #     align_corners=False,
+    #     loss_decode=dict(       # 占位, 其实并没有用
+    #         # type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)
+    #         type='DiceLoss', loss_name='loss_dice', loss_weight=1.0),
+        
+    #     downsample_label_ratio=0.5,
+    #     loss_decode_custom=[
+    #     dict(loss_name='seg_loss_ce', loss=dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=0.5)),
+    #     dict(loss_name='seg_loss_dice', loss=dict(type='DiceLoss', loss_weight=15.0)),
+    #         ]
+    #         ),
 
     pts_bbox_head=dict(
         type='MapTRHead',
+        with_ipm=True,
+
         bev_h=bev_h_,
         bev_w=bev_w_,
         num_query=900,
@@ -232,7 +254,7 @@ train_pipeline = [
     dict(type='PadMultiViewImage', size_divisor=32),
     dict(type='GenerateUVSegmentationForArgo', thickness=10), 
     dict(type='DefaultFormatBundle3D', class_names=class_names),
-    dict(type='CustomCollect3D', keys=['gt_bboxes_3d', 'gt_labels_3d', 'img', 'gt_uvsegmentations'])
+    dict(type='CustomCollect3D', keys=['gt_bboxes_3d', 'gt_labels_3d', 'img', 'gt_uvsegmentations', 'ego2img'])
 ]
 
 test_pipeline = [
@@ -248,11 +270,12 @@ test_pipeline = [
         transforms=[
             dict(type='RandomScaleImageMultiViewImage', scales=[0.5]),
             dict(type='PadMultiViewImage', size_divisor=32),
+            dict(type='GenerateUVSegmentationForArgo', thickness=10), 
             dict(
                 type='DefaultFormatBundle3D',
                 class_names=class_names,
                 with_label=False),
-            dict(type='CustomCollect3D', keys=['img'])
+            dict(type='CustomCollect3D', keys=['img', 'gt_uvsegmentations', 'ego2img'])
         ])
 ]
 
@@ -338,7 +361,7 @@ lr_config = dict(
 total_epochs = 24
 # total_epochs = 50
 # evaluation = dict(interval=1, pipeline=test_pipeline)
-evaluation = dict(interval=2, pipeline=test_pipeline, metric='chamfer')
+evaluation = dict(interval=1, pipeline=test_pipeline, metric='chamfer')
 
 runner = dict(type='EpochBasedRunner', max_epochs=total_epochs)
 
@@ -346,16 +369,18 @@ log_config = dict(
     interval=50,
     hooks=[
         dict(type='TextLoggerHook'),
-        dict(type='AddSegmentationLogVarHook'),     # 用于日志打印 IOU-Metric
+        
+        # dict(type='AddSegmentationLogVarHook', var_dict='sdf'),
 
         # dict(type='TensorboardLoggerHook'),
-        # dict(
-        #     type='WandbLoggerHook', 
-        #     init_kwargs=dict(
-        #         project='For trick',
-        #         entity='cvpr_hdmap',
-        #         name='SegAuxLoss_maptr_xyz_xent_dice_bs2_lr3e-4_x8_scale8_cnn')
-        # ),
+        dict(
+            type='WandbLoggerHook', 
+            init_kwargs=dict(
+                project='For trick',
+                entity='cvpr_hdmap',
+                # name='onlySeg_deeplabv3_dice4_ce0.1_bs2_lr3e-4_x8')
+                name='IPM-segGt_SE-Fusion_bs2_lr3e-4_x8')
+        ),
     ])
 fp16 = dict(loss_scale=512.)
 checkpoint_config = dict(interval=2)

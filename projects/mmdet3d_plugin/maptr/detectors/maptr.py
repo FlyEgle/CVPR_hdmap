@@ -31,6 +31,7 @@ class MapTR(MVXTwoStageDetector):
                  video_test_mode=False,
 
                 uvsegmentations_aux_head=None,
+                view_transformer=None,
                  ):
 
         super(MapTR,
@@ -62,6 +63,13 @@ class MapTR(MVXTwoStageDetector):
             except:
                 from mmdet3d.models import builder
                 self.uvsegmentations_aux_head = builder.build_head(uvsegmentations_aux_head)
+
+
+        self.view_transformer = view_transformer
+        if view_transformer is not None:
+            from mmdet3d.models import builder
+            self.view_transformer = builder.build_head(view_transformer)
+
 
     def extract_img_feat(self, img, img_metas, len_queue=None):
         """Extract features of images."""
@@ -113,7 +121,9 @@ class MapTR(MVXTwoStageDetector):
                           gt_labels_3d,
                           img_metas,
                           gt_bboxes_ignore=None,
-                          prev_bev=None):
+                          prev_bev=None,
+                          ipm_feature=None,
+                          ):
         """Forward function'
         Args:
             pts_feats (list[torch.Tensor]): Features of point cloud branch
@@ -130,7 +140,7 @@ class MapTR(MVXTwoStageDetector):
         """
 
         outs = self.pts_bbox_head(
-            pts_feats, img_metas, prev_bev)
+            pts_feats, img_metas, prev_bev, ipm_feature=ipm_feature)
         loss_inputs = [gt_bboxes_3d, gt_labels_3d, outs]
         losses = self.pts_bbox_head.loss(*loss_inputs, img_metas=img_metas)
         return losses
@@ -189,6 +199,7 @@ class MapTR(MVXTwoStageDetector):
                       img_mask=None,
 
                       gt_uvsegmentations=None,
+                      ego2img=None,
                       ):
         """Forward training function.
         Args:
@@ -226,7 +237,15 @@ class MapTR(MVXTwoStageDetector):
         img_metas = [each[len_queue-1] for each in img_metas]
         img_feats = self.extract_feat(img=img, img_metas=img_metas)
         losses = dict()
+
+        # bev_feat: [B, 1+3, num(z), 100, 200] 
+        # gt_uvsegmentations.flatten(0, 1).unsqueeze(1).float()
+        bev_feat, bev_feat_mask = self.view_transformer(gt_uvsegmentations, ego2img, img.shape[-2:])
+        bev_feat = bev_feat.flatten(1, 2)
         
+        # gt_uvsegmentations      [1, 7, 800, 1024]
+         
+
         if self.uvsegmentations_aux_head is not None:
             img_feats_for_seg = [] 
             for i in range(len(img_feats)):
@@ -239,12 +258,13 @@ class MapTR(MVXTwoStageDetector):
             losses.update(seg_losses)
         losses_pts = self.forward_pts_train(img_feats, gt_bboxes_3d,
                                             gt_labels_3d, img_metas,
-                                            gt_bboxes_ignore, prev_bev)
+                                            gt_bboxes_ignore, prev_bev, bev_feat)
 
         losses.update(losses_pts)
         return losses
 
-    def forward_test(self, img_metas, img=None, **kwargs):
+    def forward_test(self, img_metas, img=None,  gt_uvsegmentations=None,
+                      ego2img=None,**kwargs):
         for var, name in [(img_metas, 'img_metas')]:
             if not isinstance(var, list):
                 raise TypeError('{} must be a list, but got {}'.format(
@@ -271,7 +291,8 @@ class MapTR(MVXTwoStageDetector):
             img_metas[0][0]['can_bus'][:3] = 0
 
         new_prev_bev, bbox_results = self.simple_test(
-            img_metas[0], img[0], prev_bev=self.prev_frame_info['prev_bev'], **kwargs)
+            img_metas[0], img[0], prev_bev=self.prev_frame_info['prev_bev'],  gt_uvsegmentations=gt_uvsegmentations,
+                      ego2img=ego2img,**kwargs)
         # During inference, we save the BEV features and ego motion of each timestamp.
         self.prev_frame_info['prev_pos'] = tmp_pos
         self.prev_frame_info['prev_angle'] = tmp_angle
@@ -306,9 +327,10 @@ class MapTR(MVXTwoStageDetector):
             result_dict['attrs_3d'] = attrs.cpu()
 
         return result_dict
-    def simple_test_pts(self, x, img_metas, prev_bev=None, rescale=False):
+    def simple_test_pts(self, x, img_metas, prev_bev=None, rescale=False, ipm_feature=None):
         """Test function"""
-        outs = self.pts_bbox_head(x, img_metas, prev_bev=prev_bev)
+
+        outs = self.pts_bbox_head(x, img_metas, prev_bev=prev_bev, ipm_feature=ipm_feature)
 
         bbox_list = self.pts_bbox_head.get_bboxes(
             outs, img_metas, rescale=rescale)
@@ -319,13 +341,16 @@ class MapTR(MVXTwoStageDetector):
         ]
         # import pdb;pdb.set_trace()
         return outs['bev_embed'], bbox_results
-    def simple_test(self, img_metas, img=None, prev_bev=None, rescale=False, **kwargs):
+    def simple_test(self, img_metas, img=None, prev_bev=None, rescale=False, gt_uvsegmentations=None,
+                      ego2img=None, **kwargs):
         """Test function without augmentaiton."""
         img_feats = self.extract_feat(img=img, img_metas=img_metas)
+        bev_feat, bev_feat_mask = self.view_transformer(gt_uvsegmentations[0], ego2img[0], img.shape[-2:])
+        bev_feat = bev_feat.flatten(1, 2)
 
         bbox_list = [dict() for i in range(len(img_metas))]
         new_prev_bev, bbox_pts = self.simple_test_pts(
-            img_feats, img_metas, prev_bev, rescale=rescale)
+            img_feats, img_metas, prev_bev, rescale=rescale, ipm_feature=bev_feat)
         for result_dict, pts_bbox in zip(bbox_list, bbox_pts):
             result_dict['pts_bbox'] = pts_bbox
         return new_prev_bev, bbox_list

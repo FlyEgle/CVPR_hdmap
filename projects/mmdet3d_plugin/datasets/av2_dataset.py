@@ -1178,7 +1178,7 @@ class CustomAV2MapDataset(Dataset):
             return None
 
             
-        # # # 可视化 gt
+        # # 可视化 gt
         # import cv2
         # import copy
         # color_type = {
@@ -1186,6 +1186,11 @@ class CustomAV2MapDataset(Dataset):
         #     1: (255, 0, 0),
         #     2: (0, 255, 0),
         # }
+
+        # map_size=[-55, 55, -30, 30]
+        # scale=10
+        # bev_image_gt = np.zeros((int(scale*(map_size[1]-map_size[0])), int(scale*(map_size[3] - map_size[2])), 3), dtype=np.uint8)
+
         # for index, img in enumerate(example['img']._data):
         #     img = copy.deepcopy(img)
         #     img = torch.permute(img, (1, 2, 0))
@@ -1195,6 +1200,13 @@ class CustomAV2MapDataset(Dataset):
         #     # img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
         #     lidar2img = example['img_metas']._data['lidar2img'][index]
         #     for i, instance in enumerate(example['gt_bboxes_3d']._data.instance_list):
+                
+        #         draw_coor = (scale * (-np.array(instance)[:, :2] + np.array([map_size[1], map_size[3]]))).astype(np.int)
+        #         bev_image_gt = cv2.polylines(bev_image_gt, [draw_coor[:, [1,0]]], False, color_type[example['gt_labels_3d']._data.numpy()[i]], max(round(scale * 0.2), 1))
+        #         bev_image_gt = cv2.circle(bev_image_gt, (draw_coor[0, 1], draw_coor[0, 0]), max(2, round(scale * 0.5)), color_type[example['gt_labels_3d']._data.numpy()[i]], -1)
+        #         bev_image_gt = cv2.circle(bev_image_gt, (draw_coor[-1, 1], draw_coor[-1, 0]), max(2, round(scale * 0.5)) , color_type[example['gt_labels_3d']._data.numpy()[i]], -1)
+                
+
         #         instance = np.array(instance.coords)
         #         instance = np.concatenate([instance, np.zeros((instance.shape[0], 1))], axis=1)
         #         instance = np.concatenate([instance, np.ones((instance.shape[0], 1))], axis=1)
@@ -1213,7 +1225,7 @@ class CustomAV2MapDataset(Dataset):
         #     mmcv.mkdir_or_exist(dir)
         #     import os
         #     cv2.imwrite(os.path.join(dir, f"{CAM_TYPE[index]}.png" ), img)
-
+        #     cv2.imwrite(os.path.join(dir, f"bev.png"), bev_image_gt)
           
 
         data_queue.insert(0, example)
@@ -1428,9 +1440,13 @@ class CustomAV2MapDataset(Dataset):
                 )
             )
                 
-        if not self.test_mode:
-            annos = self.get_ann_info(index)
-            input_dict['ann_info'] = annos
+        # if not self.test_mode:
+        #     annos = self.get_ann_info(index)
+        #     input_dict['ann_info'] = annos
+
+        annos = self.get_ann_info(index)
+        input_dict['ann_info'] = annos
+
 
         # pose & angle
         # print(input_dict["ego2global_rotation"])
