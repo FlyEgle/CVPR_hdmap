@@ -1190,7 +1190,6 @@ class CustomAV2MapDataset(Dataset):
         # map_size=[-55, 55, -30, 30]
         # scale=10
         # bev_image_gt = np.zeros((int(scale*(map_size[1]-map_size[0])), int(scale*(map_size[3] - map_size[2])), 3), dtype=np.uint8)
-
         # for index, img in enumerate(example['img']._data):
         #     img = copy.deepcopy(img)
         #     img = torch.permute(img, (1, 2, 0))
@@ -1220,7 +1219,7 @@ class CustomAV2MapDataset(Dataset):
                 
         #         img = cv2.polylines(img, points_2d[None], False, color_type[example['gt_labels_3d']._data.numpy()[i]], 2)
 
-        #     CAM_TYPE = ['ring_front_center', 'ring_front_left', 'ring_front_right', 'ring_rear_left', 'ring_rear_right', 'ring_side_left', 'ring_side_right']
+        #     CAM_TYPE = ['ring_front_center', 'ring_front_right', 'ring_front_left', 'ring_rear_right', 'ring_rear_left', 'ring_side_right', 'ring_side_left']
         #     dir = f"../instance_draw/{input_dict['scene_token']}/{input_dict['sample_idx']}"
         #     mmcv.mkdir_or_exist(dir)
         #     import os

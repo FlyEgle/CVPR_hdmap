@@ -21,8 +21,8 @@ def construct_plane_grid(xbound, ybound, height: float, dtype=torch.float32):
     num_y = int((ybound[1] - ybound[0]) / ybound[2])
 
     x = torch.linspace(xmin, xmax, num_x, dtype=dtype)
-    y = torch.linspace(ymin, ymax, num_y, dtype=dtype)
-
+    # y = torch.linspace(ymin, ymax, num_y, dtype=dtype)
+    y = torch.linspace(ymax, ymin, num_y, dtype=dtype)
     # [num_y, num_x]
     y, x = torch.meshgrid(y, x)
 
@@ -158,6 +158,8 @@ class IPM(nn.Module):
         # projected_feature: B, bH, bW, nlvl, C+3
         bev_grid = bev_grid.view(B, nlvl, bH, bW,
                                  3).permute(0, 4, 1, 2, 3)
+        # cv2.imwrite('b1.png',projected_feature[0,:,1,:,:].permute(1, 2, 0).cpu().numpy())
+        # cv2.imwrite('c1.png',projected_feature[0,:,1,:,:].permute(1, 2, 0).cpu().numpy())
         projected_feature = torch.cat(
             (projected_feature, bev_grid), dim=1)       # Vectormap 里面还把xyz的位置信息也加入进来了
 

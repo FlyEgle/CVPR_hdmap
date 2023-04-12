@@ -243,11 +243,12 @@ file_client_args = dict(backend='disk')
 
 train_pipeline = [
     dict(type='LoadMultiViewImageFromFilesForAv2', to_float32=True),
-    dict(type='PhotoMetricDistortionMultiViewImage'),
+    # dict(type='PhotoMetricDistortionMultiViewImage'),
     dict(type='LoadAnnotations3D', with_bbox_3d=True, with_label_3d=True, with_attr_label=False),
     # dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
     # dict(type='ObjectNameFilter', classes=class_names),
-    dict(type='NormalizeMultiviewImage', **img_norm_cfg),
+   
+    # dict(type='NormalizeMultiviewImage', **img_norm_cfg),
     dict(type='ResizeMultiViewImageForArgo',resize=(2048, 1550)),
 
     dict(type='RandomScaleImageMultiViewImage', scales=[0.5]),
@@ -280,8 +281,8 @@ test_pipeline = [
 ]
 
 data = dict(
-    samples_per_gpu=2,
-    workers_per_gpu=16,
+    samples_per_gpu=1,
+    workers_per_gpu=0,
     train=dict(
         type=dataset_type,
         data_root=data_root,
@@ -373,14 +374,16 @@ log_config = dict(
         # dict(type='AddSegmentationLogVarHook', var_dict='sdf'),
 
         # dict(type='TensorboardLoggerHook'),
-        dict(
-            type='WandbLoggerHook', 
-            init_kwargs=dict(
-                project='For trick',
-                entity='cvpr_hdmap',
-                # name='onlySeg_deeplabv3_dice4_ce0.1_bs2_lr3e-4_x8')
-                name='IPM-segGt_SE-Fusion_bs2_lr3e-4_x8')
-        ),
+  
+        # dict(
+        #     type='WandbLoggerHook', 
+        #     init_kwargs=dict(
+        #         project='For trick',
+        #         entity='cvpr_hdmap',
+        #         # name='onlySeg_deeplabv3_dice4_ce0.1_bs2_lr3e-4_x8')
+        #         name='IPM-segGt_SE-Fusion_bs2_lr3e-4_x8')
+        # ),
+  
     ])
 fp16 = dict(loss_scale=512.)
 checkpoint_config = dict(interval=2)

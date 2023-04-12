@@ -237,10 +237,11 @@ class MapTR(MVXTwoStageDetector):
         img_metas = [each[len_queue-1] for each in img_metas]
         img_feats = self.extract_feat(img=img, img_metas=img_metas)
         losses = dict()
-
         # bev_feat: [B, 1+3, num(z), 100, 200] 
         # gt_uvsegmentations.flatten(0, 1).unsqueeze(1).float()
         bev_feat, bev_feat_mask = self.view_transformer(gt_uvsegmentations, ego2img, img.shape[-2:])
+        
+        
         bev_feat = bev_feat.flatten(1, 2)
         
         # gt_uvsegmentations      [1, 7, 800, 1024]

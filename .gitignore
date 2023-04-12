@@ -148,3 +148,4 @@ wandb/
 nohup.out
 draw_gt/
 submisson_vector.json
+./*.png
