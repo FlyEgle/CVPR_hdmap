@@ -97,7 +97,7 @@ model = dict(
             # type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)
             type='DiceLoss', loss_name='loss_dice', loss_weight=1.0),
         
-        downsample_label_ratio=1.0,
+        downsample_label_ratio=0.5,
         loss_name='bev',
         loss_decode_custom=[
         dict(loss_name='seg_loss_ce', loss=dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=0.5)),
@@ -383,7 +383,7 @@ evaluation = dict(interval=2, pipeline=test_pipeline, metric='chamfer')
 runner = dict(type='EpochBasedRunner', max_epochs=total_epochs)
 
 log_config = dict(
-    interval=1,
+    interval=50,
     hooks=[
         dict(type='TextLoggerHook'),
         
