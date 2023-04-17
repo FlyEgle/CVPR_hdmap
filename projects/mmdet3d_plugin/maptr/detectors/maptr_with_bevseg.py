@@ -6,8 +6,8 @@ from projects.mmdet3d_plugin.models.utils.grid_mask import GridMask
 from mmcv.runner import force_fp32, auto_fp16
 import torch
 @DETECTORS.register_module()
-class MapTR(MVXTwoStageDetector):
-    """MapTR.
+class MapTRWithBevSeg(MVXTwoStageDetector):
+    """MapTRWithBevSeg.
     Args:
         video_test_mode (bool): Decide whether to use temporal information during inference.
     """
@@ -31,9 +31,11 @@ class MapTR(MVXTwoStageDetector):
                  video_test_mode=False,
 
                 uvsegmentations_aux_head=None,
+
+                bev_seg_head=None,
                  ):
 
-        super(MapTR,
+        super(MapTRWithBevSeg,
               self).__init__(pts_voxel_layer, pts_voxel_encoder,
                              pts_middle_encoder, pts_fusion_layer,
                              img_backbone, pts_backbone, img_neck, pts_neck,
@@ -62,6 +64,16 @@ class MapTR(MVXTwoStageDetector):
             except:
                 from mmdet3d.models import builder
                 self.uvsegmentations_aux_head = builder.build_head(uvsegmentations_aux_head)
+
+        self.bev_seg_head = bev_seg_head
+        if self.bev_seg_head is not None:
+            try:
+                from mmseg.models import builder
+                self.bev_seg_head = builder.build_head(bev_seg_head)
+            except:
+                from mmdet3d.models import builder
+                self.bev_seg_head = builder.build_head(bev_seg_head)
+
 
     def extract_img_feat(self, img, img_metas, len_queue=None):
         """Extract features of images."""
@@ -113,7 +125,9 @@ class MapTR(MVXTwoStageDetector):
                           gt_labels_3d,
                           img_metas,
                           gt_bboxes_ignore=None,
-                          prev_bev=None):
+                          prev_bev=None,
+                          gt_bevsegmentations=None,
+                          ):
         """Forward function'
         Args:
             pts_feats (list[torch.Tensor]): Features of point cloud branch
@@ -131,10 +145,17 @@ class MapTR(MVXTwoStageDetector):
 
         outs = self.pts_bbox_head(
             pts_feats, img_metas, prev_bev)
-        import pdb; pdb.set_trace()
-        # bev outs['bev_embed'].permute(1,0,2).view(1, 100, 200, -1).shape
+
         loss_inputs = [gt_bboxes_3d, gt_labels_3d, outs]
         losses = self.pts_bbox_head.loss(*loss_inputs, img_metas=img_metas)
+        _, B, C = outs['bev_embed'].shape
+        bev_feature =  outs['bev_embed'].permute(1,2, 0).view(B, C, 100, 200)
+        bev_seg = self.bev_seg_head([bev_feature])
+        # bev_seg[1].sigmoid().topk(1,dim=0)[0].flatten(1,2)[bev_seg[0].sigmoid().topk(1,dim=0)[0].flatten(1,2).topk(500,dim=1)[1]]
+        # cv2.imwrite('a.png', bev_seg[0].sigmoid().cpu().detach().topk(1,dim=0)[1].numpy()[0]*255)
+        seg_losses =  self.bev_seg_head.losses(bev_seg, gt_bevsegmentations.to(torch.long)) 
+        losses.update(seg_losses)
+
         return losses
 
     def forward_dummy(self, img):
@@ -191,6 +212,7 @@ class MapTR(MVXTwoStageDetector):
                       img_mask=None,
 
                       gt_uvsegmentations=None,
+                      gt_bevsegmentations=None,
                       ):
         """Forward training function.
         Args:
@@ -233,7 +255,6 @@ class MapTR(MVXTwoStageDetector):
             img_feats_for_seg = [] 
             for i in range(len(img_feats)):
                 img_feats_for_seg.append(img_feats[i].flatten(0, 1))
-
             seg = self.uvsegmentations_aux_head(img_feats_for_seg)
             gt_uvsegmentations = gt_uvsegmentations.flatten(0, 1).unsqueeze(1) 
             gt_uvsegmentations = gt_uvsegmentations.to(torch.long)
@@ -241,7 +262,7 @@ class MapTR(MVXTwoStageDetector):
             losses.update(seg_losses)
         losses_pts = self.forward_pts_train(img_feats, gt_bboxes_3d,
                                             gt_labels_3d, img_metas,
-                                            gt_bboxes_ignore, prev_bev)
+                                            gt_bboxes_ignore, prev_bev, gt_bevsegmentations)
 
         losses.update(losses_pts)
         return losses
@@ -331,73 +352,3 @@ class MapTR(MVXTwoStageDetector):
         for result_dict, pts_bbox in zip(bbox_list, bbox_pts):
             result_dict['pts_bbox'] = pts_bbox
         return new_prev_bev, bbox_list
-
-
-@DETECTORS.register_module()
-class MapTR_fp16(MapTR):
-    """
-    The default version BEVFormer currently can not support FP16. 
-    We provide this version to resolve this issue.
-    """
-    # @auto_fp16(apply_to=('img', 'prev_bev', 'points'))
-    @force_fp32(apply_to=('img','points','prev_bev'))
-    def forward_train(self,
-                      points=None,
-                      img_metas=None,
-                      gt_bboxes_3d=None,
-                      gt_labels_3d=None,
-                      gt_labels=None,
-                      gt_bboxes=None,
-                      img=None,
-                      proposals=None,
-                      gt_bboxes_ignore=None,
-                      img_depth=None,
-                      img_mask=None,
-                      prev_bev=None,
-                      ):
-        """Forward training function.
-        Args:
-            points (list[torch.Tensor], optional): Points of each sample.
-                Defaults to None.
-            img_metas (list[dict], optional): Meta information of each sample.
-                Defaults to None.
-            gt_bboxes_3d (list[:obj:`BaseInstance3DBoxes`], optional):
-                Ground truth 3D boxes. Defaults to None.
-            gt_labels_3d (list[torch.Tensor], optional): Ground truth labels
-                of 3D boxes. Defaults to None.
-            gt_labels (list[torch.Tensor], optional): Ground truth labels
-                of 2D boxes in images. Defaults to None.
-            gt_bboxes (list[torch.Tensor], optional): Ground truth 2D boxes in
-                images. Defaults to None.
-            img (torch.Tensor optional): Images of each sample with shape
-                (N, C, H, W). Defaults to None.
-            proposals ([list[torch.Tensor], optional): Predicted proposals
-                used for training Fast RCNN. Defaults to None.
-            gt_bboxes_ignore (list[torch.Tensor], optional): Ground truth
-                2D boxes in images to be ignored. Defaults to None.
-        Returns:
-            dict: Losses of different branches.
-        """
-        
-        img_feats = self.extract_feat(img=img, img_metas=img_metas)
-        # import pdb;pdb.set_trace()
-        losses = dict()
-        losses_pts = self.forward_pts_train(img_feats, gt_bboxes_3d,
-                                            gt_labels_3d, img_metas,
-                                            gt_bboxes_ignore, prev_bev=prev_bev)
-        losses.update(losses_pts)
-        return losses
-
-
-    def val_step(self, data, optimizer):
-        """
-        In BEVFormer_fp16, we use this `val_step` function to inference the `prev_pev`.
-        This is not the standard function of `val_step`.
-        """
-
-        img = data['img']
-        img_metas = data['img_metas']
-        img_feats = self.extract_feat(img=img,  img_metas=img_metas)
-        prev_bev = data.get('prev_bev', None)
-        prev_bev = self.pts_bbox_head(img_feats, img_metas, prev_bev=prev_bev, only_bev=True)
-        return prev_bev

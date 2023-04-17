@@ -16,9 +16,11 @@ class DeepLabV3CustomHead(DepthwiseSeparableASPPHead):
     def __init__(self, 
                  downsample_label_ratio=1.0,
                  loss_decode_custom=None,
+                 loss_name='',
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.downsample_label_ratio = downsample_label_ratio
+        self.loss_name = loss_name
         if isinstance(loss_decode_custom, dict):
             self.loss_decode_custom = build_loss(loss_decode_custom)
         elif isinstance(loss_decode_custom, (list, tuple)):
@@ -57,15 +59,15 @@ class DeepLabV3CustomHead(DepthwiseSeparableASPPHead):
         seg_label = seg_label.squeeze(1)
 
         for loss_decode in self.loss_decode_custom.keys():
-            loss[loss_decode] = self.loss_decode_custom[loss_decode](
+            loss[self.loss_name+'_'+loss_decode] = self.loss_decode_custom[loss_decode](
                     seg_logit,
                     seg_label,
                     weight=seg_weight,
                     )
 
-        loss['acc_seg'] = accuracy(
+        loss[self.loss_name+'_'+'acc_seg'] = accuracy(
             seg_logit, seg_label)
-        loss['iou'] = get_batch_iou(seg_logit, seg_label )
+        loss[self.loss_name+'_'+'iou'] = get_batch_iou(seg_logit, seg_label )
         return loss
 
 

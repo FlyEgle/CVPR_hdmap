@@ -43,7 +43,7 @@ class PadMultiViewImage(object):
         results['pad_size_divisor'] = self.size_divisor
 
 
-        # ===== 可视化
+        # # ===== 可视化
         # import cv2
         # import os
         # for index, img in enumerate(results['img']):
@@ -68,8 +68,7 @@ class PadMultiViewImage(object):
         #     # mmcv.mkdir_or_exist('instance_draw')
         #     # import os
         #     # cv2.imwrite(os.path.join('instance_draw', f'{index}.png'), img)
-
-        #     CAM_TYPE = ['ring_front_center', 'ring_front_left', 'ring_front_right', 'ring_rear_left', 'ring_rear_right', 'ring_side_left', 'ring_side_right']
+        #     CAM_TYPE = ['ring_front_center', 'ring_front_right', 'ring_front_left', 'ring_rear_right', 'ring_rear_left', 'ring_side_right', 'ring_side_left']
         #     dir = f"../padding_img/{results['scene_token']}/{results['sample_idx']}"
         #     mmcv.mkdir_or_exist(dir)
         #     cv2.imwrite(os.path.join(dir, f"{CAM_TYPE[index]}.png" ), img)
@@ -427,4 +426,93 @@ class GenerateUVSegmentationForArgo(object):
     def __repr__(self):
         repr_str = self.__class__.__name__
         repr_str += f'thickness={self.thickness}, '
+        return repr_str
+
+
+from shapely.geometry import LineString, box
+import cv2
+from mmdet.datasets.pipelines import to_tensor
+from mmcv.parallel import DataContainer as DC
+@PIPELINES.register_module()
+class GenerateBEVSegmentationForArgo(object):
+    """GenerateBEVSegmentationForArgo.
+
+   GenerateBEVSegmentationForArgo.
+
+    Args:
+        map_size (list, optional):
+            Defaults to [(-50, 50), (-25, 25)].
+        bev_size (tuple, optional): (bev_size_h, bev_size_w).
+            Defaults to (100, 200).
+        thickness (int, optional): thickness for drawing SDMap path.
+            Defaults to 2.
+    """
+
+    def __init__(self,
+                 map_size=[(-30, 30), (-15, 15)],  # [(min_h, max_h), (min_w, max_w)]
+                 bev_size=(100, 200),  # H, W
+                 thickness=2, 
+              ):
+        self.bev_size = bev_size
+        # 注意这里 除的顺序
+        self.scale = ((map_size[0][1] - map_size[0][0]) / bev_size[1], (map_size[1][1] - map_size[1][0]) / bev_size[0]) 
+        self.map_size = map_size
+        self.patch_size = box(map_size[0][0], map_size[1][0], map_size[0][1], map_size[1][1])   # (x_min, y_min, x_max, y_max)
+
+        self.thickness = thickness
+
+
+    def __call__(self, results):
+        """Call function to load multiple types annotations.
+
+        Args:
+            results (dict): Result dict from :obj:`mmdet3d.CustomDataset`.
+
+        Returns:
+            dict: The dict containing loaded SDMap Pts and Patch.
+        """
+        gt_instances = results['ann_info']['gt_instance_xyz_list']
+        bev_map_patch = np.zeros(self.bev_size, dtype=np.uint8)
+        bev_map_lines = []
+        
+        for pts in gt_instances:
+            new_pts = LineString(pts[:,:2])
+            new_pts = new_pts.intersection(self.patch_size)
+            if new_pts.geom_type == 'MultiLineString':
+                for new_pts_single in new_pts.geoms:
+                    if new_pts_single.length == 0.0:
+                        continue
+                    line = (np.asarray(list(new_pts_single.coords)) + np.array([self.map_size[0][1], self.map_size[1][1]])) / self.scale
+                    line = line.astype(np.int)
+
+                    cv2.polylines(bev_map_patch, line[None], False, (255, 255, 255), thickness=self.thickness)
+
+            elif new_pts.length != 0.0:
+                line = (np.asarray(list(new_pts.coords)) + np.array([self.map_size[0][1], self.map_size[1][1]])) / self.scale
+                line = line.astype(np.int)
+              
+                cv2.polylines(bev_map_patch, line[None], False, (255, 255, 255), thickness=self.thickness)
+        
+        bev_map_patch = cv2.flip(bev_map_patch, 0)
+
+        # # 可视化
+        # vis_dir = '../vis_sdmap/'
+        # mmcv.mkdir_or_exist(vis_dir)
+        # import os
+        # cv2.imwrite(os.path.join(vis_dir, f"{results['sample_idx']}.png"), bev_map_patch)
+      
+        bev_map_patch = bev_map_patch.astype(np.float)
+        bev_map_patch /= bev_map_patch.max()
+        results['gt_bevsegmentations'] = DC(to_tensor([bev_map_patch]), stack=True) 
+        return results
+
+
+    def __repr__(self):
+        """str: Return a string that describes the module."""
+        indent_str = '    '
+        repr_str = self.__class__.__name__ + '(\n'
+        repr_str += f'{indent_str}map_size={self.map_size}, '
+        repr_str += f'{indent_str}bev_size={self.bev_size}, '
+        repr_str += f'{indent_str}scale={self.scale}, '
+        repr_str += f'{indent_str}thickness={self.thickness}, '
         return repr_str

@@ -248,7 +248,6 @@ class MapTRPerceptionTransformer(BaseModule):
             bev_pos=bev_pos,
             prev_bev=prev_bev,
             **kwargs)  # bev_embed shape: bs, bev_h*bev_w, embed_dims
-
         bs = mlvl_feats[0].size(0)
         query_pos, query = torch.split(
             object_query_embed, self.embed_dims, dim=1)
