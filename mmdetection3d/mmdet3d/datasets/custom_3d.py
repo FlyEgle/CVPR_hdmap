@@ -62,7 +62,6 @@ class Custom3DDataset(Dataset):
         self.CLASSES = self.get_classes(classes)
         self.cat2id = {name: i for i, name in enumerate(self.CLASSES)}
         self.data_infos = self.load_annotations(self.ann_file)
-
         if pipeline is not None:
             self.pipeline = Compose(pipeline)
 
