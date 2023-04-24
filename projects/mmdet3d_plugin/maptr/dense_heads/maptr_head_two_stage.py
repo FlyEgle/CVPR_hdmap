@@ -51,7 +51,7 @@ def denormalize_2d_pts(pts, pc_range):
                             pc_range[1]) + pc_range[1])
     return new_pts
 @HEADS.register_module()
-class MapTRHead(DETRHead):
+class MapTRHeadTWOSTAGE(DETRHead):
     """Head of Detr3D.
     Args:
         with_box_refine (bool): Whether to refine the reference points
@@ -122,7 +122,7 @@ class MapTRHead(DETRHead):
         self.dir_interval = dir_interval
         
         
-        super(MapTRHead, self).__init__(
+        super(MapTRHeadTWOSTAGE, self).__init__(
             *args, transformer=transformer, **kwargs)
         self.code_weights = nn.Parameter(torch.tensor(
             self.code_weights, requires_grad=False), requires_grad=False)
@@ -180,8 +180,13 @@ class MapTRHead(DETRHead):
                                                     self.embed_dims * 2)
             elif self.query_embed_type == 'instance_pts':
                 self.query_embedding = None
-                self.instance_embedding = nn.Embedding(self.num_vec, self.embed_dims * 2)
-                self.pts_embedding = nn.Embedding(self.num_pts_per_vec, self.embed_dims * 2)
+                self.instance_embedding = nn.Embedding(self.num_vec, self.embed_dims)
+                self.pts_embedding = nn.Embedding(self.num_pts_per_vec, self.embed_dims)
+
+        self.bev_embedding = nn.Embedding(self.bev_h * self.bev_w, self.embed_dims)
+
+        # self.query_embedding = nn.Embedding(self.num_vec, self.embed_dims * 2)
+
 
     def init_weights(self):
         """Initialize weights of the DeformDETR head."""
@@ -215,12 +220,17 @@ class MapTRHead(DETRHead):
 
         bs, num_cam, _, _, _ = mlvl_feats[0].shape
         dtype = mlvl_feats[0].dtype
+ 
         if self.query_embed_type == 'all_pts':
             object_query_embeds = self.query_embedding.weight.to(dtype)
         elif self.query_embed_type == 'instance_pts':
             pts_embeds = self.pts_embedding.weight.unsqueeze(0)
             instance_embeds = self.instance_embedding.weight.unsqueeze(1)
             object_query_embeds = (pts_embeds + instance_embeds).flatten(0, 1).to(dtype)
+
+
+        # object_query_embeds = self.query_embedding.weight.to(dtype)     # 这里就直接是
+        
         bev_queries = self.bev_embedding.weight.to(dtype)
 
         bev_mask = torch.zeros((bs, self.bev_h, self.bev_w),
@@ -254,7 +264,7 @@ class MapTRHead(DETRHead):
                 prev_bev=prev_bev
         )
 
-        bev_embed, hs, init_reference, inter_references = outputs
+        bev_embed, hs, init_reference, inter_references, bev_seg = outputs
         hs = hs.permute(0, 2, 1, 3)
         outputs_classes = []
         outputs_coords = []
@@ -285,7 +295,6 @@ class MapTRHead(DETRHead):
             #                  self.pc_range[1]) + self.pc_range[1])
             # tmp = tmp.reshape(bs, self.num_vec,-1)
             # TODO: check if using sigmoid
-            import pdb; pdb.set_trace()
             outputs_coord, outputs_pts_coord = self.transform_box(tmp)
             outputs_classes.append(outputs_class)
             outputs_coords.append(outputs_coord)
@@ -301,8 +310,20 @@ class MapTRHead(DETRHead):
             'all_pts_preds': outputs_pts_coords,
             'enc_cls_scores': None,
             'enc_bbox_preds': None,
-            'enc_pts_preds': None
+            'enc_pts_preds': None,
+            'bev_seg': bev_seg,
         }
+
+        # outs = {
+        #     'bev_embed': None,
+        #     'all_cls_scores': None,
+        #     'all_bbox_preds': None,
+        #     'all_pts_preds': None,
+        #     'enc_cls_scores': None,
+        #     'enc_bbox_preds': None,
+        #     'enc_pts_preds': None,
+        #     'bev_seg': bev_seg,
+        # }
 
         return outs
     def transform_box(self, pts, y_first=False):
@@ -642,7 +663,6 @@ class MapTRHead(DETRHead):
         enc_cls_scores = preds_dicts['enc_cls_scores']
         enc_bbox_preds = preds_dicts['enc_bbox_preds']
         enc_pts_preds  = preds_dicts['enc_pts_preds']
-        import pdb; pdb.set_trace()
         num_dec_layers = len(all_cls_scores)
         device = gt_labels_list[0].device
 

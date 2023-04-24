@@ -4,7 +4,6 @@ from hashlib import pbkdf2_hmac
 import numpy as np
 from mmdet.datasets import DATASETS
 from mmdet3d.datasets import NuScenesDataset
-from mmdet3d.datasets.pipelines import Compose
 import mmcv
 import os
 from os import path as osp
@@ -963,7 +962,6 @@ class CustomNuScenesLocalMapDataset(CustomNuScenesDataset):
                  map_classes=None,
                  noise='None',
                  noise_std=0,
-                 custom_data_pipeline=None,
                  *args, 
                  **kwargs):
         super().__init__(*args, **kwargs)
@@ -992,9 +990,6 @@ class CustomNuScenesLocalMapDataset(CustomNuScenesDataset):
         self.is_vis_on_test = False
         self.noise = noise
         self.noise_std = noise_std
-        self.custom_data_pipeline = custom_data_pipeline
-        if self.custom_data_pipeline is not None:
-            self.custom_data_pipeline = Compose(self.custom_data_pipeline)
     
     @classmethod
     def get_map_classes(cls, map_classes=None):
@@ -1099,8 +1094,6 @@ class CustomNuScenesLocalMapDataset(CustomNuScenesDataset):
         self.pre_pipeline(input_dict)
         example = self.pipeline(input_dict)
         example = self.vectormap_pipeline(example,input_dict)
-        if self.custom_data_pipeline is not None:
-            example = self.custom_data_pipeline(example)
         if self.filter_empty_gt and \
                 (example is None or ~(example['gt_labels_3d']._data != -1).any()):
             return None
@@ -1290,8 +1283,6 @@ class CustomNuScenesLocalMapDataset(CustomNuScenesDataset):
         example = self.pipeline(input_dict)
         if self.is_vis_on_test:
             example = self.vectormap_pipeline(example, input_dict)
-            if self.custom_data_pipeline is not None:
-                example = self.custom_data_pipeline(example)
         return example
 
     def __getitem__(self, idx):

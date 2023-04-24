@@ -6,8 +6,8 @@ from projects.mmdet3d_plugin.models.utils.grid_mask import GridMask
 from mmcv.runner import force_fp32, auto_fp16
 import torch
 @DETECTORS.register_module()
-class MapTRWithBevSeg(MVXTwoStageDetector):
-    """MapTRWithBevSeg.
+class MapTRWithBevSegTWOSTAGE(MVXTwoStageDetector):
+    """MapTRWithBevSegTWOSTAGE.
     Args:
         video_test_mode (bool): Decide whether to use temporal information during inference.
     """
@@ -31,11 +31,9 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
                  video_test_mode=False,
 
                 uvsegmentations_aux_head=None,
-
-                bev_seg_head=None,
                  ):
 
-        super(MapTRWithBevSeg,
+        super(MapTRWithBevSegTWOSTAGE,
               self).__init__(pts_voxel_layer, pts_voxel_encoder,
                              pts_middle_encoder, pts_fusion_layer,
                              img_backbone, pts_backbone, img_neck, pts_neck,
@@ -64,16 +62,6 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
             except:
                 from mmdet3d.models import builder
                 self.uvsegmentations_aux_head = builder.build_head(uvsegmentations_aux_head)
-
-        self.bev_seg_head = bev_seg_head
-        if self.bev_seg_head is not None:
-            try:
-                from mmseg.models import builder
-                self.bev_seg_head = builder.build_head(bev_seg_head)
-            except:
-                from mmdet3d.models import builder
-                self.bev_seg_head = builder.build_head(bev_seg_head)
-
 
     def extract_img_feat(self, img, img_metas, len_queue=None):
         """Extract features of images."""
@@ -126,6 +114,7 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
                           img_metas,
                           gt_bboxes_ignore=None,
                           prev_bev=None,
+                          
                           gt_bevsegmentations=None,
                           ):
         """Forward function'
@@ -145,15 +134,12 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
 
         outs = self.pts_bbox_head(
             pts_feats, img_metas, prev_bev)
-
+        
+        # bev outs['bev_embed'].permute(1,0,2).view(1, 100, 200, -1).shape
         loss_inputs = [gt_bboxes_3d, gt_labels_3d, outs]
         losses = self.pts_bbox_head.loss(*loss_inputs, img_metas=img_metas)
-        _, B, C = outs['bev_embed'].shape
-        bev_feature =  outs['bev_embed'].permute(1,2, 0).view(B, C, 100, 200)
-        bev_seg = self.bev_seg_head([bev_feature])
-        # bev_seg[1].sigmoid().topk(1,dim=0)[0].flatten(1,2)[bev_seg[0].sigmoid().topk(1,dim=0)[0].flatten(1,2).topk(500,dim=1)[1]]
-        # cv2.imwrite('a.png', bev_seg[0].sigmoid().cpu().detach().topk(1,dim=0)[1].numpy()[0]*255)
-        seg_losses =  self.bev_seg_head.losses(bev_seg, gt_bevsegmentations.to(torch.long)) 
+
+        seg_losses =  self.pts_bbox_head.transformer.bev_seg_head.losses(outs['bev_seg'], gt_bevsegmentations.to(torch.long)) 
         losses.update(seg_losses)
 
         return losses
@@ -250,11 +236,12 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
         img_metas = [each[len_queue-1] for each in img_metas]
         img_feats = self.extract_feat(img=img, img_metas=img_metas)
         losses = dict()
-        import pdb; pdb.set_trace() 
+        
         if self.uvsegmentations_aux_head is not None:
             img_feats_for_seg = [] 
             for i in range(len(img_feats)):
                 img_feats_for_seg.append(img_feats[i].flatten(0, 1))
+
             seg = self.uvsegmentations_aux_head(img_feats_for_seg)
             gt_uvsegmentations = gt_uvsegmentations.flatten(0, 1).unsqueeze(1) 
             gt_uvsegmentations = gt_uvsegmentations.to(torch.long)
@@ -262,7 +249,7 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
             losses.update(seg_losses)
         losses_pts = self.forward_pts_train(img_feats, gt_bboxes_3d,
                                             gt_labels_3d, img_metas,
-                                            gt_bboxes_ignore, prev_bev, gt_bevsegmentations)
+                                            gt_bboxes_ignore, prev_bev, gt_bevsegmentations=gt_bevsegmentations,)
 
         losses.update(losses_pts)
         return losses
@@ -352,3 +339,4 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
         for result_dict, pts_bbox in zip(bbox_list, bbox_pts):
             result_dict['pts_bbox'] = pts_bbox
         return new_prev_bev, bbox_list
+

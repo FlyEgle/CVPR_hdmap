@@ -55,7 +55,6 @@ class MapTRDecoder(TransformerLayerSequence):
                 key_padding_mask=key_padding_mask,
                 **kwargs)
             output = output.permute(1, 0, 2)
-
             if reg_branches is not None:
                 tmp = reg_branches[lid](output)
 

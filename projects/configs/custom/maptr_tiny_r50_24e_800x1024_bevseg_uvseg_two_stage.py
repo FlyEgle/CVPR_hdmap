@@ -9,22 +9,28 @@ plugin_dir = 'projects/mmdet3d_plugin/'
 # If point cloud range is changed, the models should also change their point
 # cloud range accordingly
 # point_cloud_range = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0]
-point_cloud_range = [-15.0, -30.0, -2.0, 15.0, 30.0, 2.0]
+# point_cloud_range = [-15.0, -30.0, -2.0, 15.0, 30.0, 2.0]
+point_cloud_range = [-30.0, -15.0, -2.0, 30.0, 15.0, 2.0]
 voxel_size = [0.15, 0.15, 4]
-
-
-
 
 img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 
 # For nuScenes we usually do 10-class detection
+# class_names = [
+#     'car', 'truck', 'construction_vehicle', 'bus', 'trailer', 'barrier',
+#     'motorcycle', 'bicycle', 'pedestrian', 'traffic_cone'
+# ]
 class_names = [
-    'car', 'truck', 'construction_vehicle', 'bus', 'trailer', 'barrier',
-    'motorcycle', 'bicycle', 'pedestrian', 'traffic_cone'
+    "ped_crossing", "divider", "boundary"
 ]
 # map has classes: divider, ped_crossing, boundary
-map_classes = ['divider', 'ped_crossing','boundary']
+map_classes = ['ped_crossing', 'divider','boundary']
+
+# class_names = [
+#     "divider", "ped_crossing", "boundary"
+# ]
+# map_classes = ['divider', 'ped_crossing','boundary']
 # fixed_ptsnum_per_line = 20
 # map_classes = ['divider',]
 fixed_ptsnum_per_gt_line = 20 # now only support fixed_pts > 0
@@ -45,15 +51,44 @@ _ffn_dim_ = _dim_*2
 _num_levels_ = 1
 # bev_h_ = 50
 # bev_w_ = 50
-bev_h_ = 200
-bev_w_ = 100
+# bev_h_ = 200
+# bev_w_ = 100
+bev_h_ = 100
+bev_w_ = 200
 queue_length = 1 # each sequence contains `queue_length` frames.
 
+
+
+bev_seg_head=dict(
+    type='DeepLabV3CustomHead',
+    in_channels=_dim_,
+    in_index=0,
+    channels=_dim_ // 2,
+    dilations=(1, 12, 24, 36),
+    c1_in_channels=_dim_,
+    c1_channels=_dim_ // 2,
+    dropout_ratio=0.1,
+    num_classes=2,      # 两种类别，前景或者背景
+    norm_cfg=dict(type='SyncBN', requires_grad=True),
+    align_corners=False,
+    loss_decode=dict(       # 占位, 其实并没有用
+        # type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)
+        type='DiceLoss', loss_name='loss_dice', loss_weight=1.0),
+    
+    downsample_label_ratio=0.5,
+    loss_name='bev',
+    loss_decode_custom=[
+    dict(loss_name='seg_loss_ce', loss=dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=0.5)),
+    dict(loss_name='seg_loss_dice', loss=dict(type='DiceLoss', loss_weight=15.0)),
+        ]
+        )
+
+
 model = dict(
-    type='MapTRWithBevSeg',
+    type='MapTRWithBevSegTWOSTAGE',
     use_grid_mask=True,
     video_test_mode=False,
-    # pretrained=dict(img='ckpts/resnet50-19c8e357.pth'),
+    pretrained=dict(img='ckpts/resnet50-19c8e357.pth'),
     img_backbone=dict(
         type='ResNet',
         depth=50,
@@ -71,8 +106,8 @@ model = dict(
         add_extra_convs='on_output',
         num_outs=_num_levels_,
         relu_before_extra_convs=True),
-
-    bev_seg_head=dict(
+    
+    uvsegmentations_aux_head=dict(
         type='DeepLabV3CustomHead',
         in_channels=_dim_,
         in_index=0,
@@ -89,7 +124,7 @@ model = dict(
             type='DiceLoss', loss_name='loss_dice', loss_weight=1.0),
         
         downsample_label_ratio=0.5,
-        loss_name='bev',
+        loss_name='uv',
         loss_decode_custom=[
         dict(loss_name='seg_loss_ce', loss=dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=0.5)),
         dict(loss_name='seg_loss_dice', loss=dict(type='DiceLoss', loss_weight=15.0)),
@@ -97,31 +132,31 @@ model = dict(
             ),
 
     pts_bbox_head=dict(
-        type='MapTRHead',
+        type='MapTRHeadTWOSTAGE',
         bev_h=bev_h_,
         bev_w=bev_w_,
         num_query=900,
-        num_vec=50, #  有多少个instance
-        num_pts_per_vec=fixed_ptsnum_per_pred_line, # one bbox      # 每个 instance 有多少个 点
+        num_vec=50,
+        num_pts_per_vec=fixed_ptsnum_per_pred_line, # one bbox
         num_pts_per_gt_vec=fixed_ptsnum_per_gt_line,
         dir_interval=1,
         query_embed_type='instance_pts',
         transform_method='minmax',
         gt_shift_pts_pattern='v2',
-        num_classes=num_map_classes,    # 检测的类别数量
+        num_classes=num_map_classes,
         in_channels=_dim_,
         sync_cls_avg_factor=True,
         with_box_refine=True,
-        as_two_stage=False,
+        as_two_stage=False,     
         code_size=2,
         code_weights=[1.0, 1.0, 1.0, 1.0],
         transformer=dict(
-            type='MapTRPerceptionTransformer',
+            type='MapTRPerceptionTransformerTWOSTAGE',
+            bev_seg_head=bev_seg_head,      #  在这里添加 bev-seg-head，对reference-pts做初始化
             rotate_prev_bev=True,
             use_shift=True,
             use_can_bus=True,
             embed_dims=_dim_,
-            num_cams=6,
             encoder=dict(
                 type='BEVFormerEncoder',
                 num_layers=1,
@@ -138,7 +173,6 @@ model = dict(
                         dict(
                             type='GeometrySptialCrossAttention',
                             pc_range=point_cloud_range,
-                            num_cams=6,
                             attention=dict(
                                 type='GeometryKernelAttention',
                                 embed_dims=_dim_,
@@ -178,9 +212,11 @@ model = dict(
         bbox_coder=dict(
             type='MapTRNMSFreeCoder',
             # post_center_range=[-61.2, -61.2, -10.0, 61.2, 61.2, 10.0],
-            post_center_range=[-20, -35, -20, -35, 20, 35, 20, 35],
+            # post_center_range=[-20, -35, -20, -35, 20, 35, 20, 35], # xmin, ymin, 
+            post_center_range = [-35, -20, -35, -20, 35, 20, 35, 20],
+            # post_center_range = None, # default
             pc_range=point_cloud_range,
-            max_num=50,     # 按照默认配置，我们预测出 50个，同时取出前50个
+            max_num=50,
             voxel_size=voxel_size,
             num_classes=num_map_classes),
         positional_encoding=dict(
@@ -217,31 +253,40 @@ model = dict(
                       weight=5),
             pc_range=point_cloud_range))))
 
-dataset_type = 'CustomNuScenesLocalMapDataset'
-data_root = 'data/nuscenes/'
+# dataset_type = 'CustomNuScenesLocalMapDataset'
+# ================================test ==================================
+dataset_type = "CustomAV2MapDataset"
+data_root = 'data/'
+# data_root = "/cpfs01/user/jiangmingchao/work/dataset/cvpr2023/OpenLaneV2/"
+# data_root = "/cpfs01/user/jiangmingchao/work/code/BEVFormer/data/nuscenes/"
 file_client_args = dict(backend='disk')
 
 
 train_pipeline = [
-    dict(type='LoadMultiViewImageFromFiles', to_float32=True),
-    # dict(type='PhotoMetricDistortionMultiViewImage'),
+    dict(type='LoadMultiViewImageFromFilesForAv2', to_float32=True),
+    dict(type='PhotoMetricDistortionMultiViewImage'),
     dict(type='LoadAnnotations3D', with_bbox_3d=True, with_label_3d=True, with_attr_label=False),
-    dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
-    dict(type='ObjectNameFilter', classes=class_names),
-    # dict(type='NormalizeMultiviewImage', **img_norm_cfg),
+    # dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
+    # dict(type='ObjectNameFilter', classes=class_names),
+    dict(type='NormalizeMultiviewImage', **img_norm_cfg),
+    dict(type='ResizeMultiViewImageForArgo',resize=(2048, 1550)),
+
     dict(type='RandomScaleImageMultiViewImage', scales=[0.5]),
     dict(type='PadMultiViewImage', size_divisor=32),
+    dict(type='GenerateUVSegmentationForArgo', thickness=10), 
+    dict(type='GenerateBEVSegmentationForArgo'), 
     dict(type='DefaultFormatBundle3D', class_names=class_names),
-    dict(type='CustomCollect3D', keys=['gt_bboxes_3d', 'gt_labels_3d', 'img'])
+    dict(type='CustomCollect3D', keys=['gt_bboxes_3d', 'gt_labels_3d', 'img', 'gt_uvsegmentations', 'gt_bevsegmentations'])
 ]
 
 test_pipeline = [
-    dict(type='LoadMultiViewImageFromFiles', to_float32=True),
+    dict(type='LoadMultiViewImageFromFilesForAv2', to_float32=True),
     dict(type='NormalizeMultiviewImage', **img_norm_cfg),
-   
+    dict(type='ResizeMultiViewImageForArgo',resize=(2048, 1550)),
+ 
     dict(
         type='MultiScaleFlipAug3D',
-        img_scale=(1600, 900),
+        img_scale=(2048, 1550),
         pts_scale_ratio=1,
         flip=False,
         transforms=[
@@ -261,7 +306,11 @@ data = dict(
     train=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file='./data/nuscenes_infos_temporal_train.pkl',
+        ann_file='./data/train_annotations.json',
+        ann_file_s3='./data/openlanev2_av2_train_infos_v0.1.pkl',
+        # ann_file=data_root + 'nuscenes_infos_temporal_train.pkl',
+        map_ann_file = data_root + "train_annotations.json",
+        out_ann_file = None,
         pipeline=train_pipeline,
         classes=class_names,
         modality=input_modality,
@@ -276,17 +325,14 @@ data = dict(
         queue_length=queue_length,
         # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
         # and box_type_3d='Depth' in sunrgbd and scannet dataset.
-        box_type_3d='LiDAR',
-        custom_data_pipeline = [
-            # dict(type='GenerateUVSegmentationForNusc', thickness=10), 
-            dict(type='GenerateBEVSegmentationForNusc', thickness=2), 
-        ],
-        
-        ),
+        box_type_3d='LiDAR'),
     val=dict(type=dataset_type,
-             data_root=data_root,
-             ann_file='./data/nuscenes_infos_temporal_val.pkl',
-             map_ann_file=data_root + 'nuscenes_map_anns_val.json',
+            data_root=data_root,
+            ann_file='./data/val_annotations.json',
+            ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
+             map_ann_file=data_root + 'val_annotations.json',
+             out_ann_file = data_root + 'av2_map_anns_val.json',
+            #  map_ann_file=data_root + 'nuscenes_map_anns_val.json',
              pipeline=test_pipeline,  bev_size=(bev_h_, bev_w_),
              pc_range=point_cloud_range,
              fixed_ptsnum_per_line=fixed_ptsnum_per_gt_line,
@@ -296,8 +342,10 @@ data = dict(
              classes=class_names, modality=input_modality, samples_per_gpu=1),
     test=dict(type=dataset_type,
               data_root=data_root,
-              ann_file='./data/nuscenes_infos_temporal_test.pkl',
-              map_ann_file=data_root + 'nuscenes_map_anns_val.json',
+            ann_file='./data/val_annotations.json',
+            ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
+              map_ann_file=data_root + 'val_annotations.json',
+            #   map_ann_file=data_root + 'nuscenes_map_anns_val.json',
               pipeline=test_pipeline, bev_size=(bev_h_, bev_w_),
               pc_range=point_cloud_range,
               fixed_ptsnum_per_line=fixed_ptsnum_per_gt_line,
@@ -311,12 +359,16 @@ data = dict(
 
 optimizer = dict(
     type='AdamW',
+    # lr=1e-4,
+    # lr=6e-4,
+    # lr=3e-4,
     lr=6e-4,
     paramwise_cfg=dict(
         custom_keys={
             'img_backbone': dict(lr_mult=0.1),
         }),
     weight_decay=0.01)
+
 
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # learning policy
@@ -326,8 +378,10 @@ lr_config = dict(
     warmup_iters=500,
     warmup_ratio=1.0 / 3,
     min_lr_ratio=1e-3)
-total_epochs = 24
-# total_epochs = 50
+
+
+# total_epochs = 24
+total_epochs = 50
 # evaluation = dict(interval=1, pipeline=test_pipeline)
 evaluation = dict(interval=1, pipeline=test_pipeline, metric='chamfer')
 
@@ -337,8 +391,21 @@ log_config = dict(
     interval=50,
     hooks=[
         dict(type='TextLoggerHook'),
-        # dict(type='TensorboardLoggerHook')
+        
+        # dict(type='AddSegmentationLogVarHook', var_dict='sdf'),
+
+        # dict(type='TensorboardLoggerHook'),
+        dict(
+            type='WandbLoggerHook', 
+            init_kwargs=dict(
+                project='For trick',
+                entity='cvpr_hdmap',
+                # name='onlySeg_deeplabv3_dice4_ce0.1_bs2_lr3e-4_x8')
+                name='twostage_local3x3_ref.xy_deeplabv3_dice15_ce0.5_bs2_lr6e-4_x4')
+        ),
     ])
 fp16 = dict(loss_scale=512.)
 checkpoint_config = dict(interval=1)
 
+find_unused_parameters=True
+load_from='/home/jiangshengyin/shengyin/ex-ckpts/only-seg-head.pth'

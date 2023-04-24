@@ -375,8 +375,8 @@ lr_config = dict(
     min_lr_ratio=1e-3)
 
 
-total_epochs = 24
-# total_epochs = 50
+# total_epochs = 24
+total_epochs = 50
 # evaluation = dict(interval=1, pipeline=test_pipeline)
 evaluation = dict(interval=2, pipeline=test_pipeline, metric='chamfer')
 
@@ -403,3 +403,4 @@ fp16 = dict(loss_scale=512.)
 checkpoint_config = dict(interval=2)
 
 # find_unused_parameters=True
+resume_from='/home/jiangshengyin/shengyin/CVPR_hdmap/work_dirs/maptr_tiny_r50_24e_800x1024_bevseg_uvseg/latest.pth'

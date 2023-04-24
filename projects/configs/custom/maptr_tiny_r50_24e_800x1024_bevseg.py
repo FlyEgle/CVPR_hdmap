@@ -270,7 +270,7 @@ train_pipeline = [
     dict(type='RandomScaleImageMultiViewImage', scales=[0.5]),
     dict(type='PadMultiViewImage', size_divisor=32),
     dict(type='GenerateUVSegmentationForArgo', thickness=10), 
-    dict(type='GenerateBEVSegmentationForArgo', thickness=2), 
+    dict(type='GenerateBEVSegmentationForArgo'), 
     dict(type='DefaultFormatBundle3D', class_names=class_names),
     dict(type='CustomCollect3D', keys=['gt_bboxes_3d', 'gt_labels_3d', 'img', 'gt_uvsegmentations', 'gt_bevsegmentations'])
 ]
