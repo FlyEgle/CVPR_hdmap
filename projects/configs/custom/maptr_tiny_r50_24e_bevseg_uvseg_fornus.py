@@ -49,6 +49,32 @@ bev_h_ = 200
 bev_w_ = 100
 queue_length = 1 # each sequence contains `queue_length` frames.
 
+
+bev_seg_head=dict(
+        type='DeepLabV3CustomHead',
+        in_channels=_dim_,
+        in_index=0,
+        channels=_dim_ // 2,
+        dilations=(1, 12, 24, 36),
+        c1_in_channels=_dim_,
+        c1_channels=_dim_ // 2,
+        dropout_ratio=0.1,
+        num_classes=2,      # 两种类别，前景或者背景
+        norm_cfg=dict(type='SyncBN', requires_grad=True),
+        align_corners=False,
+        loss_decode=dict(       # 占位, 其实并没有用
+            # type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)
+            type='DiceLoss', loss_name='loss_dice', loss_weight=1.0),
+        
+        downsample_label_ratio=0.5,
+        loss_name='bev',
+        loss_decode_custom=[
+        dict(loss_name='seg_loss_ce', loss=dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=0.5)),
+        dict(loss_name='seg_loss_dice', loss=dict(type='DiceLoss', loss_weight=15.0)),
+            ]
+    )
+
+
 model = dict(
     type='MapTRWithBevSeg',
     use_grid_mask=True,
@@ -121,6 +147,7 @@ model = dict(
             use_shift=True,
             use_can_bus=True,
             embed_dims=_dim_,
+            bev_seg_head=bev_seg_head,      #  bev-seg-head
             num_cams=6,
             encoder=dict(
                 type='BEVFormerEncoder',

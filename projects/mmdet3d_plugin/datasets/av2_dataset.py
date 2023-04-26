@@ -1326,10 +1326,12 @@ class CustomAV2MapDataset(Dataset):
             # input_dict["cam_extrinsics"] =  []
             for cam_type, cam_info in info["sensor"].items():
                 if self.ann_file_s3 is None:                # by shengyin
+                    #folder = self.map_ann_file.split("/")[-1].split("_")[0]
+                    #prefix = self.map_ann_file.split("/OpenLaneV2")[0] + "/OpenLaneV2"  # hard code
+                    #prefix_path = os.path.join(prefix, folder)
+                    #image_path = os.path.join(prefix_path, cam_info["image_path"])
                     folder = self.map_ann_file.split("/")[-1].split("_")[0]
-                    prefix = self.map_ann_file.split("/OpenLaneV2")[0] + "/OpenLaneV2"  # hard code
-                    prefix_path = os.path.join(prefix, folder)
-                    image_path = os.path.join(prefix_path, cam_info["image_path"])
+                    image_path = os.path.join(self.map_ann_file.split("/")[0], folder, cam_info["image_path"])
                 else:
                     image_path = self.data_infos_s3[index]['sensor'][cam_type]['image_path'].replace(
                         f"{self.data_infos_s3[index]['segment_id']}/image", f"{self.data_infos_s3[index]['meta_data']['source_id']}/sensors/cameras", 1)

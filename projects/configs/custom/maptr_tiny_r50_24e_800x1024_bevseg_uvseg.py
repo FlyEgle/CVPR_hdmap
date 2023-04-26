@@ -57,6 +57,30 @@ bev_h_ = 100
 bev_w_ = 200
 queue_length = 1 # each sequence contains `queue_length` frames.
 
+bev_seg_head=dict(
+        type='DeepLabV3CustomHead',
+        in_channels=_dim_,
+        in_index=0,
+        channels=_dim_ // 2,
+        dilations=(1, 12, 24, 36),
+        c1_in_channels=_dim_,
+        c1_channels=_dim_ // 2,
+        dropout_ratio=0.1,
+        num_classes=2,      # 两种类别，前景或者背景
+        norm_cfg=dict(type='SyncBN', requires_grad=True),
+        align_corners=False,
+        loss_decode=dict(       # 占位, 其实并没有用
+            # type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)
+            type='DiceLoss', loss_name='loss_dice', loss_weight=1.0),
+        
+        downsample_label_ratio=0.5,
+        loss_name='bev',
+        loss_decode_custom=[
+        dict(loss_name='seg_loss_ce', loss=dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=0.5)),
+        dict(loss_name='seg_loss_dice', loss=dict(type='DiceLoss', loss_weight=15.0)),
+            ]
+    )
+
 
 model = dict(
     type='MapTRWithBevSeg',
@@ -81,29 +105,7 @@ model = dict(
         num_outs=_num_levels_,
         relu_before_extra_convs=True),
     
-    bev_seg_head=dict(
-        type='DeepLabV3CustomHead',
-        in_channels=_dim_,
-        in_index=0,
-        channels=_dim_ // 2,
-        dilations=(1, 12, 24, 36),
-        c1_in_channels=_dim_,
-        c1_channels=_dim_ // 2,
-        dropout_ratio=0.1,
-        num_classes=2,      # 两种类别，前景或者背景
-        norm_cfg=dict(type='SyncBN', requires_grad=True),
-        align_corners=False,
-        loss_decode=dict(       # 占位, 其实并没有用
-            # type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)
-            type='DiceLoss', loss_name='loss_dice', loss_weight=1.0),
-        
-        downsample_label_ratio=0.5,
-        loss_name='bev',
-        loss_decode_custom=[
-        dict(loss_name='seg_loss_ce', loss=dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=0.5)),
-        dict(loss_name='seg_loss_dice', loss=dict(type='DiceLoss', loss_weight=15.0)),
-            ]
-            ),
+    
     uvsegmentations_aux_head=dict(
         type='DeepLabV3CustomHead',
         in_channels=_dim_,
@@ -153,6 +155,7 @@ model = dict(
             use_shift=True,
             use_can_bus=True,
             embed_dims=_dim_,
+            bev_seg_head=bev_seg_head,      #  bev-seg-head
             encoder=dict(
                 type='BEVFormerEncoder',
                 num_layers=1,
@@ -303,7 +306,7 @@ data = dict(
         type=dataset_type,
         data_root=data_root,
         ann_file='./data/train_annotations.json',
-        ann_file_s3='./data/openlanev2_av2_train_infos_v0.1.pkl',
+        #ann_file_s3='./data/openlanev2_av2_train_infos_v0.1.pkl',
         # ann_file=data_root + 'nuscenes_infos_temporal_train.pkl',
         map_ann_file = data_root + "train_annotations.json",
         out_ann_file = None,
@@ -325,7 +328,7 @@ data = dict(
     val=dict(type=dataset_type,
             data_root=data_root,
             ann_file='./data/val_annotations.json',
-            ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
+            #ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
              map_ann_file=data_root + 'val_annotations.json',
              out_ann_file = data_root + 'av2_map_anns_val.json',
             #  map_ann_file=data_root + 'nuscenes_map_anns_val.json',
@@ -339,7 +342,7 @@ data = dict(
     test=dict(type=dataset_type,
               data_root=data_root,
             ann_file='./data/val_annotations.json',
-            ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
+            #ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
               map_ann_file=data_root + 'val_annotations.json',
             #   map_ann_file=data_root + 'nuscenes_map_anns_val.json',
               pipeline=test_pipeline, bev_size=(bev_h_, bev_w_),

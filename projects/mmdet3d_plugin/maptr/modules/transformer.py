@@ -37,6 +37,8 @@ class MapTRPerceptionTransformer(BaseModule):
                  can_bus_norm=True,
                  use_cams_embeds=True,
                  rotate_center=[100, 100],
+
+                 bev_seg_head=None,
                  **kwargs):
         super(MapTRPerceptionTransformer, self).__init__(**kwargs)
         self.encoder = build_transformer_layer_sequence(encoder)
@@ -55,6 +57,17 @@ class MapTRPerceptionTransformer(BaseModule):
         self.two_stage_num_proposals = two_stage_num_proposals
         self.init_layers()
         self.rotate_center = rotate_center
+
+        self.bev_seg_head = bev_seg_head
+
+        if self.bev_seg_head is not None:
+            try:
+                from mmseg.models import builder
+                self.bev_seg_head = builder.build_head(bev_seg_head)
+            except:
+                from mmdet3d.models import builder
+                self.bev_seg_head = builder.build_head(bev_seg_head)
+
 
     def init_layers(self):
         """Initialize layers of the Detr3DTransformer."""
@@ -249,6 +262,14 @@ class MapTRPerceptionTransformer(BaseModule):
             prev_bev=prev_bev,
             **kwargs)  # bev_embed shape: bs, bev_h*bev_w, embed_dims
         bs = mlvl_feats[0].size(0)
+
+        B, _, C = bev_embed.shape
+        bev_seg = None
+        if self.bev_seg_head is not None:           # bev-seg-head
+            bev_feature = bev_embed.permute(1,2, 0).reshape(B, C, bev_h, bev_w)
+            bev_seg = self.bev_seg_head([bev_feature])
+
+
         query_pos, query = torch.split(
             object_query_embed, self.embed_dims, dim=1)
         query_pos = query_pos.unsqueeze(0).expand(bs, -1, -1)
@@ -275,4 +296,4 @@ class MapTRPerceptionTransformer(BaseModule):
 
         inter_references_out = inter_references
 
-        return bev_embed, inter_states, init_reference_out, inter_references_out
+        return bev_embed, inter_states, init_reference_out, inter_references_out, bev_seg

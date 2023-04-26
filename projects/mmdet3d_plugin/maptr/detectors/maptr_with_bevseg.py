@@ -32,7 +32,7 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
 
                 uvsegmentations_aux_head=None,
 
-                bev_seg_head=None,
+                # bev_seg_head=None,
                  ):
 
         super(MapTRWithBevSeg,
@@ -65,14 +65,14 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
                 from mmdet3d.models import builder
                 self.uvsegmentations_aux_head = builder.build_head(uvsegmentations_aux_head)
 
-        self.bev_seg_head = bev_seg_head
-        if self.bev_seg_head is not None:
-            try:
-                from mmseg.models import builder
-                self.bev_seg_head = builder.build_head(bev_seg_head)
-            except:
-                from mmdet3d.models import builder
-                self.bev_seg_head = builder.build_head(bev_seg_head)
+        # self.bev_seg_head = bev_seg_head
+        # if self.bev_seg_head is not None:
+        #     try:
+        #         from mmseg.models import builder
+        #         self.bev_seg_head = builder.build_head(bev_seg_head)
+        #     except:
+        #         from mmdet3d.models import builder
+        #         self.bev_seg_head = builder.build_head(bev_seg_head)
 
 
     def extract_img_feat(self, img, img_metas, len_queue=None):
@@ -148,12 +148,8 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
 
         loss_inputs = [gt_bboxes_3d, gt_labels_3d, outs]
         losses = self.pts_bbox_head.loss(*loss_inputs, img_metas=img_metas)
-        _, B, C = outs['bev_embed'].shape
-        bev_feature =  outs['bev_embed'].permute(1,2, 0).view(B, C, 100, 200)
-        bev_seg = self.bev_seg_head([bev_feature])
-        # bev_seg[1].sigmoid().topk(1,dim=0)[0].flatten(1,2)[bev_seg[0].sigmoid().topk(1,dim=0)[0].flatten(1,2).topk(500,dim=1)[1]]
         # cv2.imwrite('a.png', bev_seg[0].sigmoid().cpu().detach().topk(1,dim=0)[1].numpy()[0]*255)
-        seg_losses =  self.bev_seg_head.losses(bev_seg, gt_bevsegmentations.to(torch.long)) 
+        seg_losses =  self.pts_bbox_head.transformer.bev_seg_head.losses(outs['bev_seg'], gt_bevsegmentations.to(torch.long)) 
         losses.update(seg_losses)
 
         return losses

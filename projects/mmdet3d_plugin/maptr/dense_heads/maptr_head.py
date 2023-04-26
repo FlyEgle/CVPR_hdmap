@@ -254,7 +254,7 @@ class MapTRHead(DETRHead):
                 prev_bev=prev_bev
         )
 
-        bev_embed, hs, init_reference, inter_references = outputs
+        bev_embed, hs, init_reference, inter_references, bev_seg = outputs
         hs = hs.permute(0, 2, 1, 3)
         outputs_classes = []
         outputs_coords = []
@@ -300,7 +300,8 @@ class MapTRHead(DETRHead):
             'all_pts_preds': outputs_pts_coords,
             'enc_cls_scores': None,
             'enc_bbox_preds': None,
-            'enc_pts_preds': None
+            'enc_pts_preds': None,
+            'bev_seg': bev_seg,
         }
 
         return outs
