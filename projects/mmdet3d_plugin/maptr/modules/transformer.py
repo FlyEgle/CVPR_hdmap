@@ -266,7 +266,7 @@ class MapTRPerceptionTransformer(BaseModule):
         B, _, C = bev_embed.shape
         bev_seg = None
         if self.bev_seg_head is not None:           # bev-seg-head
-            bev_feature = bev_embed.permute(1,2, 0).reshape(B, C, bev_h, bev_w)
+            bev_feature = bev_embed.permute(0,2, 1).reshape(B, C, bev_h, bev_w)
             bev_seg = self.bev_seg_head([bev_feature])
 
 
