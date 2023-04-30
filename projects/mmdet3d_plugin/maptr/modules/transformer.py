@@ -11,6 +11,41 @@ from mmcv.cnn.bricks.transformer import build_transformer_layer_sequence
 from projects.mmdet3d_plugin.bevformer.modules.temporal_self_attention import TemporalSelfAttention
 from projects.mmdet3d_plugin.bevformer.modules.spatial_cross_attention import MSDeformableAttention3D
 from projects.mmdet3d_plugin.bevformer.modules.decoder import CustomMSDeformableAttention
+
+from mmdet.models.backbones.resnet import BasicBlock
+class SELayer(nn.Module):
+    
+    def __init__(self, channels, act_layer=nn.ReLU, gate_layer=nn.Sigmoid):
+        super().__init__()
+        self.conv_expand = nn.Conv2d(channels, 32, 3, padding=1, bias=True)
+        self.conv_basicblock = BasicBlock(32, 32)
+        self.conv_reduce = nn.Conv2d(32, 1, 1, bias=True)
+        self.gate = gate_layer()
+
+    def forward(self, x, x_se):
+        x_se = self.conv_expand(x_se)
+        x_se = self.conv_basicblock(x_se)
+        x_se = self.conv_reduce(x_se)
+        return x * self.gate(x_se)
+
+
+
+class ProcessNet(nn.Module):
+    
+    def __init__(self, in_channels, out_channels,act_layer=nn.ReLU, gate_layer=nn.Sigmoid):
+        super().__init__()
+        self.conv_expand = nn.Conv2d(in_channels, in_channels // 2,  3, padding=1, bias=True)
+        self.conv_basicblock = BasicBlock(in_channels // 2, in_channels // 2)
+        self.conv_reduce = nn.Conv2d(in_channels // 2, out_channels, 1, bias=True)
+
+    def forward(self, x_se):
+        x_se = self.conv_expand(x_se)
+        x_se = self.conv_basicblock(x_se)
+        x_se = self.conv_reduce(x_se)
+        return x_se
+    
+
+
 @TRANSFORMER.register_module()
 class MapTRPerceptionTransformer(BaseModule):
     """Implements the Detr3D transformer.
@@ -39,6 +74,7 @@ class MapTRPerceptionTransformer(BaseModule):
                  rotate_center=[100, 100],
 
                  bev_seg_head=None,
+                 with_se=False,
                  **kwargs):
         super(MapTRPerceptionTransformer, self).__init__(**kwargs)
         self.encoder = build_transformer_layer_sequence(encoder)
@@ -67,6 +103,11 @@ class MapTRPerceptionTransformer(BaseModule):
             except:
                 from mmdet3d.models import builder
                 self.bev_seg_head = builder.build_head(bev_seg_head)
+
+        self.with_se = with_se
+        if self.with_se: 
+            self.se_layer = SELayer(2)
+            self.process_net = ProcessNet(self.embed_dims * 2, self.embed_dims)
 
 
     def init_layers(self):
@@ -201,6 +242,34 @@ class MapTRPerceptionTransformer(BaseModule):
         )
 
         return bev_embed
+    
+
+
+    def gen_grid_2d(self, H, W, bs=1, device='cuda', dtype=torch.float):
+        """Get the reference points used in SCA and TSA.
+        Args:
+            H, W: spatial shape of bev.
+            Z: hight of pillar.
+            D: sample D points uniformly from each pillar.
+            device (obj:`device`): The device where
+                reference_points should be.
+        Returns:
+            Tensor: reference points used in decoder, has \
+                shape (bs, num_keys, num_levels, 2).
+        """
+        ref_y, ref_x = torch.meshgrid(
+            torch.linspace(
+                0.5, H - 0.5, H, dtype=dtype, device=device),
+            torch.linspace(
+                0.5, W - 0.5, W, dtype=dtype, device=device)
+        )
+        ref_y = ref_y[None] / H
+        ref_x = ref_x[None] / W
+        ref_2d = torch.stack((ref_x, ref_y), -1)
+        ref_2d = ref_2d.repeat(bs, 1, 1, 1).permute(0, 3, 1, 2)
+        return ref_2d
+    
+
     # TODO apply fp16 to this module cause grad_norm NAN
     # @auto_fp16(apply_to=('mlvl_feats', 'bev_queries', 'object_query_embed', 'prev_bev', 'bev_pos'))
     def forward(self,
@@ -264,10 +333,23 @@ class MapTRPerceptionTransformer(BaseModule):
         bs = mlvl_feats[0].size(0)
 
         B, _, C = bev_embed.shape
+        device = bev_embed.device
+        dtype = bev_embed.dtype
         bev_seg = None
         if self.bev_seg_head is not None:           # bev-seg-head
             bev_feature = bev_embed.permute(0,2, 1).reshape(B, C, bev_h, bev_w)
             bev_seg = self.bev_seg_head([bev_feature])
+
+        if self.with_se and bev_seg is not None:       # 用bev-seg-head 去增强 bev-feature
+            bev_seg_se = torch.softmax(bev_seg, dim=1)
+            bev_feature_with_se = self.se_layer(bev_feature, bev_seg_se)
+            # bev_feature = bev_feature + bev_feature_with_se
+            # bev_embed = bev_feature.flatten(2).permute(0, 2, 1)
+            # grid_2d = torch.abs( (self.gen_grid_2d(H=bev_h, W=bev_w, bs=B, device=device, dtype=dtype) - 0.5))
+            bev_feature = torch.cat((bev_feature, bev_feature_with_se), dim=1)
+            bev_feature = self.process_net(bev_feature)
+            bev_embed = bev_feature.flatten(2).permute(0, 2, 1)
+
 
 
         query_pos, query = torch.split(
