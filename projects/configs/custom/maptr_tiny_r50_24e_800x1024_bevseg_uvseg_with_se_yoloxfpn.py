@@ -409,7 +409,7 @@ log_config = dict(
         dict(
             type='WandbLoggerHook', 
             init_kwargs=dict(
-                project='For trick',
+                project='For module',
                 entity='cvpr_hdmap',
                 # name='onlySeg_deeplabv3_dice4_ce0.1_bs2_lr3e-4_x8')
                 # name='se_bev-uv_deeplabv3_dice15_ce0.5_bs2_lr3e-4_x8')

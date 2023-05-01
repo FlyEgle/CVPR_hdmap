@@ -5,7 +5,10 @@ from mmdet3d.models.detectors.mvx_two_stage import MVXTwoStageDetector
 from projects.mmdet3d_plugin.models.utils.grid_mask import GridMask
 from mmcv.runner import force_fp32, auto_fp16
 import torch
-import mmcls.models
+try:
+    import mmcls.models
+except:
+    pass
 @DETECTORS.register_module()
 class MapTRWithBevSeg(MVXTwoStageDetector):
     """MapTRWithBevSeg.
@@ -101,6 +104,7 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
             return None
         if self.with_img_neck:
             img_feats = self.img_neck(img_feats)
+            # img_feats = [img_feats[-1]]           # 这里在有些模块里需要
 
         img_feats_reshaped = []
         for img_feat in img_feats:
