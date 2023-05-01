@@ -307,7 +307,7 @@ data = dict(
         type=dataset_type,
         data_root=data_root,
         ann_file='./data/train_annotations.json',
-        #ann_file_s3='./data/openlanev2_av2_train_infos_v0.1.pkl',
+        ann_file_s3='./data/openlanev2_av2_train_infos_v0.1.pkl',
         # ann_file=data_root + 'nuscenes_infos_temporal_train.pkl',
         map_ann_file = data_root + "train_annotations.json",
         out_ann_file = None,
@@ -329,7 +329,7 @@ data = dict(
     val=dict(type=dataset_type,
             data_root=data_root,
             ann_file='./data/val_annotations.json',
-            #ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
+            ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
              map_ann_file=data_root + 'val_annotations.json',
              out_ann_file = data_root + 'av2_map_anns_val.json',
             #  map_ann_file=data_root + 'nuscenes_map_anns_val.json',
@@ -343,7 +343,7 @@ data = dict(
     test=dict(type=dataset_type,
               data_root=data_root,
             ann_file='./data/val_annotations.json',
-            #ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
+            ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
               map_ann_file=data_root + 'val_annotations.json',
             #   map_ann_file=data_root + 'nuscenes_map_anns_val.json',
               pipeline=test_pipeline, bev_size=(bev_h_, bev_w_),
@@ -402,10 +402,12 @@ log_config = dict(
                 # name='onlySeg_deeplabv3_dice4_ce0.1_bs2_lr3e-4_x8')
                 # name='se_bev-uv_deeplabv3_dice15_ce0.5_bs2_lr3e-4_x8')
                 # name='se-catCoords-process_bev-uv_deeplabv3_dice15_ce0.5_bs2_lr3e-4_x8')    
-                name='se-cat-process_bev-uv_deeplabv3_dice15_ce0.5_bs2_lr3e-4_x8')
+                # name='se-cat-process_bev-uv_deeplabv3_dice15_ce0.5_bs2_lr3e-4_x8')
+                name='cat-coords-bevseg-process_bev-uv_deeplabv3_dice15_ce0.5_bs2_lr3e-4_x8')
+
         ),
     ])
 fp16 = dict(loss_scale=512.)
 checkpoint_config = dict(interval=2)
 
-# find_unused_parameters=True
+find_unused_parameters=True

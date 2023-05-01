@@ -45,6 +45,18 @@ class ProcessNet(nn.Module):
         return x_se
     
 
+class ChangeChannels(nn.Module):
+    
+    def __init__(self, in_channels=2, out_channels=32, act_layer=nn.ReLU, gate_layer=nn.Sigmoid):
+        super().__init__()
+        self.conv_expand = nn.Conv2d(in_channels, out_channels, 3, padding=1, bias=True)
+        self.conv_basicblock = BasicBlock(out_channels, out_channels)
+
+    def forward(self, x_se):
+        x_se = self.conv_expand(x_se)
+        x_se = self.conv_basicblock(x_se)
+        return x_se
+
 
 @TRANSFORMER.register_module()
 class MapTRPerceptionTransformer(BaseModule):
@@ -107,7 +119,8 @@ class MapTRPerceptionTransformer(BaseModule):
         self.with_se = with_se
         if self.with_se: 
             self.se_layer = SELayer(2)
-            self.process_net = ProcessNet(self.embed_dims * 2, self.embed_dims)
+            self.process_net = ProcessNet(self.embed_dims + 32 + 2, self.embed_dims)
+            self.change_channels = ChangeChannels(2, 32)
 
 
     def init_layers(self):
@@ -341,12 +354,19 @@ class MapTRPerceptionTransformer(BaseModule):
             bev_seg = self.bev_seg_head([bev_feature])
 
         if self.with_se and bev_seg is not None:       # 用bev-seg-head 去增强 bev-feature
-            bev_seg_se = torch.softmax(bev_seg, dim=1)
-            bev_feature_with_se = self.se_layer(bev_feature, bev_seg_se)
-            # bev_feature = bev_feature + bev_feature_with_se
+            # bev_seg_se = torch.softmax(bev_seg, dim=1)
+            # bev_feature_with_se = self.se_layer(bev_feature, bev_seg_se)
+            # # bev_feature = bev_feature + bev_feature_with_se
+            # # bev_embed = bev_feature.flatten(2).permute(0, 2, 1)
+            # # grid_2d = torch.abs( (self.gen_grid_2d(H=bev_h, W=bev_w, bs=B, device=device, dtype=dtype) - 0.5))
+            # bev_feature = torch.cat((bev_feature, bev_feature_with_se), dim=1)
+            # bev_feature = self.process_net(bev_feature)
             # bev_embed = bev_feature.flatten(2).permute(0, 2, 1)
-            # grid_2d = torch.abs( (self.gen_grid_2d(H=bev_h, W=bev_w, bs=B, device=device, dtype=dtype) - 0.5))
-            bev_feature = torch.cat((bev_feature, bev_feature_with_se), dim=1)
+
+            bev_seg_prob = torch.softmax(bev_seg, dim=1)
+            bev_seg_new = self.change_channels(bev_seg_prob)
+            grid_2d = torch.abs( (self.gen_grid_2d(H=bev_h, W=bev_w, bs=B, device=device, dtype=dtype) - 0.5))
+            bev_feature = torch.cat((bev_feature, bev_seg_new, grid_2d), dim=1)
             bev_feature = self.process_net(bev_feature)
             bev_embed = bev_feature.flatten(2).permute(0, 2, 1)
 
