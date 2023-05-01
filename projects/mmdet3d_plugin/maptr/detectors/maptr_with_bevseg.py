@@ -5,6 +5,7 @@ from mmdet3d.models.detectors.mvx_two_stage import MVXTwoStageDetector
 from projects.mmdet3d_plugin.models.utils.grid_mask import GridMask
 from mmcv.runner import force_fp32, auto_fp16
 import torch
+import mmcls.models
 @DETECTORS.register_module()
 class MapTRWithBevSeg(MVXTwoStageDetector):
     """MapTRWithBevSeg.
