@@ -5,6 +5,9 @@ from mmdet3d.models.detectors.mvx_two_stage import MVXTwoStageDetector
 from projects.mmdet3d_plugin.models.utils.grid_mask import GridMask
 from mmcv.runner import force_fp32, auto_fp16
 import torch
+import copy
+
+import torch.nn.functional as F
 try:
     import mmcls.models
 except:
@@ -77,6 +80,8 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
         #     except:
         #         from mmdet3d.models import builder
         #         self.bev_seg_head = builder.build_head(bev_seg_head)
+
+        self.grid = None
 
 
     def extract_img_feat(self, img, img_metas, len_queue=None):
@@ -182,7 +187,7 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
         """Obtain history BEV features iteratively. To save GPU memory, gradients are not calculated.
         """
         self.eval()
-
+        prev_bev_list = []
         with torch.no_grad():
             prev_bev = None
             bs, len_queue, num_cams, C, H, W = imgs_queue.shape
@@ -192,10 +197,91 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
                 img_metas = [each[i] for each in img_metas_list]
                 # img_feats = self.extract_feat(img=img, img_metas=img_metas)
                 img_feats = [each_scale[:, i] for each_scale in img_feats_list]
+                # prev_bev = self.pts_bbox_head(
+                #     img_feats, img_metas, prev_bev, only_bev=True)
                 prev_bev = self.pts_bbox_head(
-                    img_feats, img_metas, prev_bev, only_bev=True)
-            self.train()
-            return prev_bev
+                    img_feats, img_metas, None, only_bev=True)      # NOTION: 这里喂入self.pts_bbox_head 时 pre_bev需要取为None
+                prev_bev_list.append(prev_bev)
+        return prev_bev_list
+
+
+    def gen_grid(self, input, cur_ego2global, pre_ego2global):
+        n, c, h, w = input.shape
+        if self.grid is None:
+            # generate grid
+            xs = torch.linspace(
+                0, w - 1, w, dtype=input.dtype,
+                device=input.device).view(1, w).expand(h, w)
+            ys = torch.linspace(
+                0, h - 1, h, dtype=input.dtype,
+                device=input.device).view(h, 1).expand(h, w)
+            grid = torch.stack((xs, ys, torch.ones_like(xs)), -1)
+            self.grid = grid
+        else:
+            grid = self.grid
+        grid = grid.view(1, h, w, 3).expand(n, h, w, 3).view(n, h, w, 3, 1)
+
+        tem_rots = copy.deepcopy(pre_ego2global[:, :3, :3]) 
+        pre_ego2global[:, :3, :3] = cur_ego2global[:, :3, :3]
+        cur_ego2global[:, :3, :3] = tem_rots 
+        l02l1 = torch.inverse(pre_ego2global).matmul(cur_ego2global)[:, :, :].view(n, 1, 1, 4, 4)
+
+   
+        l02l1 = l02l1[:, :, :,
+                      [True, True, False, True], :][:, :, :, :,
+                                                    [True, True, False, True]]
+        feat2bev = torch.zeros((3, 3), dtype=grid.dtype).to(grid)
+
+        # 这里先写死, 后面再改的优雅点
+        feat2bev[0, 0] = 0.3
+        feat2bev[1, 1] = 0.3
+        feat2bev[0, 2] = -30.0
+        feat2bev[1, 2] = -15.0
+        feat2bev[2, 2] = 1
+        feat2bev = feat2bev.view(1, 3, 3)
+        tf = torch.inverse(feat2bev).matmul(l02l1).matmul(feat2bev)
+
+        # transform and normalize
+        grid = tf.matmul(grid)
+        normalize_factor = torch.tensor([w - 1.0, h - 1.0],
+                                        dtype=input.dtype,
+                                        device=input.device)
+        grid = grid[:, :, :, :2, 0] / normalize_factor.view(1, 1, 1,
+                                                            2) * 2.0 - 1.0
+        return grid
+    
+    def shift_feature(self, input, cur_ego2global, pre_ego2global):
+        """
+           c02l0: cur ---> camera2ego
+           c12l0: pre ---> camera2ego 
+        """
+        grid = self.gen_grid(input, cur_ego2global, pre_ego2global)
+        output = F.grid_sample(input, grid.to(input.dtype), align_corners=True)
+        return output
+
+    def align_bev_feature(self, img_metas_list, prev_bev_feature_list):
+        len_queue = len(prev_bev_feature_list) + 1          # 最后一个是 cur-bev-feature
+        ego2global_list = []
+        device = prev_bev_feature_list[0].device 
+        dtype = prev_bev_feature_list[0].dtype
+ 
+        # 准备一些 矩阵
+        for i in range(len_queue):
+            
+            # lidar 和 ego 是一样的
+            ego2global = torch.stack([ torch.from_numpy(each[i]['lidar2global']).to(device) for each in img_metas_list], dim=0)
+            ego2global_list.append(ego2global) 
+        align_prev_bev_feature_list = []
+        B, _, C = prev_bev_feature_list[0].shape
+
+        # 开始shift
+        for i in range(len_queue - 1):
+            prev_bev_feature_list[i] = prev_bev_feature_list[i].permute(0, 2, 1).reshape(B, C, self.pts_bbox_head.bev_h, self.pts_bbox_head.bev_w)
+            align_bev = self.shift_feature(prev_bev_feature_list[i], ego2global_list[-1].float(), ego2global_list[i].float())
+            align_prev_bev_feature_list.append(align_bev)
+
+        return align_prev_bev_feature_list
+
 
     # @auto_fp16(apply_to=('img', 'points'))
     @force_fp32(apply_to=('img','points','prev_bev'))
@@ -245,20 +331,24 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
 
         prev_img_metas = copy.deepcopy(img_metas)
         # prev_bev = self.obtain_history_bev(prev_img, prev_img_metas)
-        # import pdb;pdb.set_trace()
-        prev_bev = self.obtain_history_bev(prev_img, prev_img_metas) if len_queue>1 else None
+        prev_bev = None
+        if self.pts_bbox_head.transformer.with_prev is True:
+            prev_bev = self.obtain_history_bev(prev_img, prev_img_metas) if len_queue>1 else None
+            prev_bev = self.align_bev_feature(prev_img_metas, prev_bev)
+        self.train()
+        img.requires_grad = True
 
         img_metas = [each[len_queue-1] for each in img_metas]
         img_feats = self.extract_feat(img=img, img_metas=img_metas)
         losses = dict()
-        
         if self.uvsegmentations_aux_head is not None:
-            img_feats_for_seg = [] 
+            img_feats_for_seg = []
             for i in range(len(img_feats)):
                 img_feats_for_seg.append(img_feats[i].flatten(0, 1))
             seg = self.uvsegmentations_aux_head(img_feats_for_seg)
             gt_uvsegmentations = gt_uvsegmentations.flatten(0, 1).unsqueeze(1) 
             gt_uvsegmentations = gt_uvsegmentations.to(torch.long)
+
             seg_losses =  self.uvsegmentations_aux_head.losses(seg, gt_uvsegmentations) 
             losses.update(seg_losses)
         losses_pts = self.forward_pts_train(img_feats, gt_bboxes_3d,
@@ -268,38 +358,74 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
         losses.update(losses_pts)
         return losses
 
+    # def forward_test(self, img_metas, img=None, **kwargs):
+    #     for var, name in [(img_metas, 'img_metas')]:
+    #         if not isinstance(var, list):
+    #             raise TypeError('{} must be a list, but got {}'.format(
+    #                 name, type(var)))
+    #     img = [img] if img is None else img
+
+    #     if img_metas[0][0]['scene_token'] != self.prev_frame_info['scene_token']:
+    #         # the first sample of each scene is truncated
+    #         self.prev_frame_info['prev_bev'] = None
+    #     # update idx
+    #     self.prev_frame_info['scene_token'] = img_metas[0][0]['scene_token']
+
+    #     # do not use temporal information
+    #     if not self.video_test_mode:
+    #         self.prev_frame_info['prev_bev'] = None
+    #     # Get the delta of ego position and angle between two timestamps.
+    #     tmp_pos = copy.deepcopy(img_metas[0][0]['can_bus'][:3])
+    #     tmp_angle = copy.deepcopy(img_metas[0][0]['can_bus'][-1])
+    #     if self.prev_frame_info['prev_bev'] is not None:
+    #         img_metas[0][0]['can_bus'][:3] -= self.prev_frame_info['prev_pos']
+    #         img_metas[0][0]['can_bus'][-1] -= self.prev_frame_info['prev_angle']
+    #     else:
+    #         img_metas[0][0]['can_bus'][-1] = 0
+    #         img_metas[0][0]['can_bus'][:3] = 0
+
+    #     new_prev_bev, bbox_results = self.simple_test(
+    #         img_metas[0], img[0], prev_bev=self.prev_frame_info['prev_bev'], **kwargs)
+    #     # During inference, we save the BEV features and ego motion of each timestamp.
+    #     self.prev_frame_info['prev_pos'] = tmp_pos
+    #     self.prev_frame_info['prev_angle'] = tmp_angle
+    #     self.prev_frame_info['prev_bev'] = new_prev_bev
+    #     return bbox_results
+
     def forward_test(self, img_metas, img=None, **kwargs):
-        for var, name in [(img_metas, 'img_metas')]:
-            if not isinstance(var, list):
-                raise TypeError('{} must be a list, but got {}'.format(
-                    name, type(var)))
-        img = [img] if img is None else img
+        # for var, name in [(img_metas, 'img_metas')]:
+        #     if not isinstance(var, list):
+        #         raise TypeError('{} must be a list, but got {}'.format(
+        #             name, type(var)))
+        # img = [img] if img is None else img
 
-        if img_metas[0][0]['scene_token'] != self.prev_frame_info['scene_token']:
-            # the first sample of each scene is truncated
-            self.prev_frame_info['prev_bev'] = None
-        # update idx
-        self.prev_frame_info['scene_token'] = img_metas[0][0]['scene_token']
+        # if img_metas[0][0]['scene_token'] != self.prev_frame_info['scene_token']:
+        #     # the first sample of each scene is truncated
+        #     self.prev_frame_info['prev_bev'] = None
+        # # update idx
+        # self.prev_frame_info['scene_token'] = img_metas[0][0]['scene_token']
 
-        # do not use temporal information
-        if not self.video_test_mode:
-            self.prev_frame_info['prev_bev'] = None
-        # Get the delta of ego position and angle between two timestamps.
-        tmp_pos = copy.deepcopy(img_metas[0][0]['can_bus'][:3])
-        tmp_angle = copy.deepcopy(img_metas[0][0]['can_bus'][-1])
-        if self.prev_frame_info['prev_bev'] is not None:
-            img_metas[0][0]['can_bus'][:3] -= self.prev_frame_info['prev_pos']
-            img_metas[0][0]['can_bus'][-1] -= self.prev_frame_info['prev_angle']
-        else:
-            img_metas[0][0]['can_bus'][-1] = 0
-            img_metas[0][0]['can_bus'][:3] = 0
+        # # do not use temporal information
+        # if not self.video_test_mode:
+        #     self.prev_frame_info['prev_bev'] = None
+        # # Get the delta of ego position and angle between two timestamps.
+        # tmp_pos = copy.deepcopy(img_metas[0][0]['can_bus'][:3])
+        # tmp_angle = copy.deepcopy(img_metas[0][0]['can_bus'][-1])
+        # if self.prev_frame_info['prev_bev'] is not None:
+        #     img_metas[0][0]['can_bus'][:3] -= self.prev_frame_info['prev_pos']
+        #     img_metas[0][0]['can_bus'][-1] -= self.prev_frame_info['prev_angle']
+        # else:
+        #     img_metas[0][0]['can_bus'][-1] = 0
+        #     img_metas[0][0]['can_bus'][:3] = 0
 
         new_prev_bev, bbox_results = self.simple_test(
-            img_metas[0], img[0], prev_bev=self.prev_frame_info['prev_bev'], **kwargs)
+            img_metas, img, **kwargs)
+      
         # During inference, we save the BEV features and ego motion of each timestamp.
-        self.prev_frame_info['prev_pos'] = tmp_pos
-        self.prev_frame_info['prev_angle'] = tmp_angle
-        self.prev_frame_info['prev_bev'] = new_prev_bev
+        # self.prev_frame_info['prev_pos'] = tmp_pos
+        # self.prev_frame_info['prev_angle'] = tmp_angle
+        # self.prev_frame_info['prev_bev'] = new_prev_bev
+      
         return bbox_results
 
     def pred2result(self, bboxes, scores, labels, pts, attrs=None):
@@ -330,6 +456,7 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
             result_dict['attrs_3d'] = attrs.cpu()
 
         return result_dict
+    
     def simple_test_pts(self, x, img_metas, prev_bev=None, rescale=False):
         """Test function"""
         outs = self.pts_bbox_head(x, img_metas, prev_bev=prev_bev)
@@ -343,9 +470,22 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
         ]
         # import pdb;pdb.set_trace()
         return outs['bev_embed'], bbox_results
+
     def simple_test(self, img_metas, img=None, prev_bev=None, rescale=False, **kwargs):
         """Test function without augmentaiton."""
+        len_queue = img.size(1)
+        prev_img = img[:, :-1, ...]
+        img = img[:, -1, ...]
+
+        prev_img_metas = copy.deepcopy(img_metas)
+        # prev_bev = self.obtain_history_bev(prev_img, prev_img_metas)
+        # import pdb;pdb.set_trace()
+        prev_bev = self.obtain_history_bev(prev_img, prev_img_metas) if len_queue>1 else None
+        prev_bev = self.align_bev_feature(prev_img_metas, prev_bev)
+
+        img_metas = [each[len_queue-1] for each in img_metas]
         img_feats = self.extract_feat(img=img, img_metas=img_metas)
+
 
         bbox_list = [dict() for i in range(len(img_metas))]
         new_prev_bev, bbox_pts = self.simple_test_pts(

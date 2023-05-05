@@ -87,6 +87,8 @@ class MapTRPerceptionTransformer(BaseModule):
 
                  bev_seg_head=None,
                  with_se=False,
+
+                 time_pre_process=None,
                  **kwargs):
         super(MapTRPerceptionTransformer, self).__init__(**kwargs)
         self.encoder = build_transformer_layer_sequence(encoder)
@@ -121,6 +123,12 @@ class MapTRPerceptionTransformer(BaseModule):
             self.se_layer = SELayer(2)
             self.process_net = ProcessNet(self.embed_dims + 32 + 2, self.embed_dims)
             self.change_channels = ChangeChannels(2, 32)
+
+        from mmdet.models import builder
+        self.time_pre_process = \
+            builder.build_backbone(time_pre_process)
+
+        self.with_prev = True
 
 
     def init_layers(self):
@@ -249,7 +257,8 @@ class MapTRPerceptionTransformer(BaseModule):
             bev_pos=bev_pos,
             spatial_shapes=spatial_shapes,
             level_start_index=level_start_index,
-            prev_bev=prev_bev,
+            # prev_bev=prev_bev,
+            prev_bev=None, 
             shift=shift,
             **kwargs
         )
@@ -341,7 +350,8 @@ class MapTRPerceptionTransformer(BaseModule):
             bev_w,
             grid_length=grid_length,
             bev_pos=bev_pos,
-            prev_bev=prev_bev,
+            # prev_bev=prev_bev,
+            prev_bev=None,          # 这里改成 None
             **kwargs)  # bev_embed shape: bs, bev_h*bev_w, embed_dims
         bs = mlvl_feats[0].size(0)
 
@@ -349,6 +359,16 @@ class MapTRPerceptionTransformer(BaseModule):
         device = bev_embed.device
         dtype = bev_embed.dtype
         bev_seg = None
+
+
+        if self.with_prev is True:      # 在前几个 epoch时，encoder不稳定，此时不融合
+            bev_feat_list = prev_bev
+            bev_feature = bev_embed.permute(0,2, 1).reshape(B, C, bev_h, bev_w)
+            bev_feat_list.append(bev_feature)
+            bev_feat = torch.cat(bev_feat_list, dim=1)
+            bev_feat = self.time_pre_process(bev_feat)    # 返回的是 list
+
+            bev_embed = bev_feat[0].flatten(2).permute(0, 2, 1)     # 还原回去
         if self.bev_seg_head is not None:           # bev-seg-head
             bev_feature = bev_embed.permute(0,2, 1).reshape(B, C, bev_h, bev_w)
             bev_seg = self.bev_seg_head([bev_feature])
@@ -369,8 +389,6 @@ class MapTRPerceptionTransformer(BaseModule):
             bev_feature = torch.cat((bev_feature, bev_seg_new, grid_2d), dim=1)
             bev_feature = self.process_net(bev_feature)
             bev_embed = bev_feature.flatten(2).permute(0, 2, 1)
-
-
 
         query_pos, query = torch.split(
             object_query_embed, self.embed_dims, dim=1)
@@ -395,7 +413,6 @@ class MapTRPerceptionTransformer(BaseModule):
             spatial_shapes=torch.tensor([[bev_h, bev_w]], device=query.device),
             level_start_index=torch.tensor([0], device=query.device),
             **kwargs)
-
         inter_references_out = inter_references
 
         return bev_embed, inter_states, init_reference_out, inter_references_out, bev_seg

@@ -3,3 +3,5 @@ from .decoder import MapTRDecoder
 from .geometry_kernel_attention import GeometrySptialCrossAttention, GeometryKernelAttention
 
 from .yoloxfpn import YOLOXPAFPN
+
+from .custom_resnet import CustomResNet

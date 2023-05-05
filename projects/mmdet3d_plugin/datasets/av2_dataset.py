@@ -1105,7 +1105,7 @@ class CustomAV2MapDataset(Dataset):
                 scene_list.append(frame)
 
             samples_list.extend(scene_list)
-        # samples_list = samples_list[:100:4]
+        # samples_list = samples_list[:30:4]
         return samples_list
         
     def get_ann_info(self, index):
@@ -1158,7 +1158,7 @@ class CustomAV2MapDataset(Dataset):
 
         # temporal aug
         prev_indexs_list = list(range(index-self.queue_length, index))
-        random.shuffle(prev_indexs_list)
+        # random.shuffle(prev_indexs_list)
         prev_indexs_list = sorted(prev_indexs_list[1:], reverse=True)
         ##
 
@@ -1245,18 +1245,20 @@ class CustomAV2MapDataset(Dataset):
             metas_map[i] = each['img_metas'].data
             if i == 0:
                 metas_map[i]['prev_bev'] = False
-                prev_pos = copy.deepcopy(metas_map[i]['can_bus'][:3])
-                prev_angle = copy.deepcopy(metas_map[i]['can_bus'][-1])
+                # prev_pos = copy.deepcopy(metas_map[i]['can_bus'][:3])
+                # prev_angle = copy.deepcopy(metas_map[i]['can_bus'][-1])
                 metas_map[i]['can_bus'][:3] = 0
                 metas_map[i]['can_bus'][-1] = 0
             else:
                 metas_map[i]['prev_bev'] = True
-                tmp_pos = copy.deepcopy(metas_map[i]['can_bus'][:3])
-                tmp_angle = copy.deepcopy(metas_map[i]['can_bus'][-1])
-                metas_map[i]['can_bus'][:3] -= prev_pos
-                metas_map[i]['can_bus'][-1] -= prev_angle
-                prev_pos = copy.deepcopy(tmp_pos)
-                prev_angle = copy.deepcopy(tmp_angle)
+                metas_map[i]['can_bus'][:3] = 0         # 采用bevdet的时序方式，因此在算历史bev时，是没有偏移量
+                metas_map[i]['can_bus'][-1] = 0
+                # tmp_pos = copy.deepcopy(metas_map[i]['can_bus'][:3])
+                # tmp_angle = copy.deepcopy(metas_map[i]['can_bus'][-1])
+                # metas_map[i]['can_bus'][:3] -= prev_pos
+                # metas_map[i]['can_bus'][-1] -= prev_angle
+                # prev_pos = copy.deepcopy(tmp_pos)
+                # prev_angle = copy.deepcopy(tmp_angle)
 
         queue[-1]['img'] = DC(torch.stack(imgs_list),
                               cpu_only=False, stack=True)
@@ -1509,12 +1511,82 @@ class CustomAV2MapDataset(Dataset):
         Returns:
             dict: Testing data dict of the corresponding index.
         """
+        data_queue = []
+
+        # temporal aug
+        prev_indexs_list = list(range(index-self.queue_length, index))
+        # random.shuffle(prev_indexs_list)
+        prev_indexs_list = sorted(prev_indexs_list[1:], reverse=True)
+        ##
+
         input_dict = self.get_data_info(index)
+        frame_idx = input_dict['frame_idx']
+        scene_token = input_dict['scene_token']
+
         self.pre_pipeline(input_dict)
         example = self.pipeline(input_dict)
         if self.is_vis_on_test:
             example = self.vectormap_pipeline(example, input_dict)
-        return example
+
+
+        if self.queue_length == 1:
+            return example
+        data_queue.insert(0, example)
+        for i in prev_indexs_list:
+            i = max(0, i)
+            input_dict = self.get_data_info(i)
+            if input_dict is None:
+                return None
+            if input_dict['frame_idx'] < frame_idx and input_dict['scene_token'] == scene_token:
+                self.pre_pipeline(input_dict)
+                example = self.pipeline(input_dict)
+                if self.is_vis_on_test:
+                    example = self.vectormap_pipeline(example,input_dict)
+                frame_idx = input_dict['frame_idx']
+            data_queue.insert(0, copy.deepcopy(example))
+        return self.union2one_fortest(data_queue)
+
+    def union2one_fortest(self, queue):
+        """
+        convert sample queue into one single sample.
+        """
+        imgs_list = [each['img'][0].data for each in queue]
+        metas_map = {}
+        prev_pos = None
+        prev_angle = None
+        for i, each in enumerate(queue):
+            metas_map[i] = each['img_metas'][0].data
+            if i == 0:
+                metas_map[i]['prev_bev'] = False
+                prev_pos = copy.deepcopy(metas_map[i]['can_bus'][:3])
+                prev_angle = copy.deepcopy(metas_map[i]['can_bus'][-1])
+                metas_map[i]['can_bus'][:3] = 0
+                metas_map[i]['can_bus'][-1] = 0
+            # else:
+            #     metas_map[i]['prev_bev'] = True
+            #     tmp_pos = copy.deepcopy(metas_map[i]['can_bus'][:3])
+            #     tmp_angle = copy.deepcopy(metas_map[i]['can_bus'][-1])
+            #     metas_map[i]['can_bus'][:3] -= prev_pos
+            #     metas_map[i]['can_bus'][-1] -= prev_angle
+            #     prev_pos = copy.deepcopy(tmp_pos)
+            #     prev_angle = copy.deepcopy(tmp_angle)
+
+            # 在 bevformer 中 时序是逐渐帧叠加，而我是生成bev后，统一叠加，因此这里改成单帧的就好
+            else:
+                metas_map[i]['prev_bev'] = True
+                tmp_pos = copy.deepcopy(metas_map[i]['can_bus'][:3])
+                tmp_angle = copy.deepcopy(metas_map[i]['can_bus'][-1])
+                metas_map[i]['can_bus'][:3] = 0
+                metas_map[i]['can_bus'][-1] = 0
+                prev_pos = copy.deepcopy(tmp_pos)
+                prev_angle = copy.deepcopy(tmp_angle)
+
+        queue[-1]['img'] = DC(torch.stack(imgs_list),
+                              cpu_only=False, stack=True)
+        queue[-1]['img_metas'] = DC(metas_map, cpu_only=True)
+        queue = queue[-1]
+        return queue
+
 
     def __getitem__(self, idx):
         """Get item from infos according to the given index.
