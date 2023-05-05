@@ -55,7 +55,7 @@ _num_levels_ = 1
 # bev_w_ = 100
 bev_h_ = 100
 bev_w_ = 200
-queue_length = 2 # each sequence contains `queue_length` frames.
+queue_length = 4 # each sequence contains `queue_length` frames.
 
 bev_seg_head=dict(
         type='DeepLabV3CustomHead',
@@ -421,8 +421,8 @@ find_unused_parameters=True
 custom_hooks = [
     dict(
         type='SequentialControlHook',
-        temporal_start_epoch=-1,
+        temporal_start_epoch=2,
     ),
 ]
 
-load_from = '/root/shengyin/CVPR_hdmap/work_dirs/maptr_tiny_r50_24e_800x1024_bevseg_uvseg_with_se/epoch_24.pth'
+# load_from = '/root/shengyin/CVPR_hdmap/work_dirs/maptr_tiny_r50_24e_800x1024_bevseg_uvseg_with_se/epoch_24.pth'
