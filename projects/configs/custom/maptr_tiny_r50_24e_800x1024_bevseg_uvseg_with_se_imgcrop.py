@@ -269,7 +269,9 @@ train_pipeline = [
     # dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
     # dict(type='ObjectNameFilter', classes=class_names),
     dict(type='NormalizeMultiviewImage', **img_norm_cfg),
-    dict(type='ResizeMultiViewImageForArgo',resize=(2048, 1550)),
+    dict(type='CropFrontViewImageForArgo'),     # front-img: (2048, 1550) crop--> (1550, 1550)
+    dict(type='PadMultiViewImageForArgo'),          # front-img: (1550, 1550) padding--> (1550, 2048)
+    dict(type='ResizeMultiViewImageForArgo',resize=(2048, 1550)),   # 这里resize(W, H)
     dict(type='RandomScaleImageMultiViewImage', scales=[0.5]),
     dict(type='PadMultiViewImage', size_divisor=32),
     dict(type='GenerateUVSegmentationForArgo', thickness=10), 
@@ -281,6 +283,8 @@ train_pipeline = [
 test_pipeline = [
     dict(type='LoadMultiViewImageFromFilesForAv2', to_float32=True),
     dict(type='NormalizeMultiviewImage', **img_norm_cfg),
+    dict(type='CropFrontViewImageForArgo'),     # 加入
+    dict(type='PadMultiViewImageForArgo'),
 
     dict(type='ResizeMultiViewImageForArgo',resize=(2048, 1550)),
     dict(
@@ -301,7 +305,7 @@ test_pipeline = [
 
 data = dict(
     samples_per_gpu=2,
-    workers_per_gpu=0,
+    workers_per_gpu=16,
     train=dict(
         type=dataset_type,
         data_root=data_root,
@@ -393,18 +397,13 @@ log_config = dict(
         # dict(type='AddSegmentationLogVarHook', var_dict='sdf'),
 
         # dict(type='TensorboardLoggerHook'),
-        # dict(
-        #     type='WandbLoggerHook', 
-        #     init_kwargs=dict(
-        #         project='For trick',
-        #         entity='cvpr_hdmap',
-        #         # name='onlySeg_deeplabv3_dice4_ce0.1_bs2_lr3e-4_x8')
-        #         # name='se_bev-uv_deeplabv3_dice15_ce0.5_bs2_lr3e-4_x8')
-        #         # name='se-catCoords-process_bev-uv_deeplabv3_dice15_ce0.5_bs2_lr3e-4_x8')    
-        #         # name='se-cat-process_bev-uv_deeplabv3_dice15_ce0.5_bs2_lr3e-4_x8')
-        #         name='cat-coords-bevseg-process_bev-uv_deeplabv3_dice15_ce0.5_bs2_lr3e-4_x8')
-
-        # ),
+        dict(
+            type='WandbLoggerHook', 
+            init_kwargs=dict(
+                project='For module',
+                entity='cvpr_hdmap',
+                name='cropImg_r50-bs2_lr3e-4_x8')
+        ),
     ])
 fp16 = dict(loss_scale=512.)
 checkpoint_config = dict(interval=2)

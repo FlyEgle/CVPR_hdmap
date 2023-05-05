@@ -6,11 +6,11 @@ from .transform_3d import (
 from .formating import CustomDefaultFormatBundle3D
 
 from .loading_av2 import LoadMultiViewImageFromFilesForAv2
-from .transform_3d_av2 import ResizeMultiViewImageForArgo
+from .transform_3d_av2 import ResizeMultiViewImageForArgo, CropFrontViewImageForArgo, PadMultiViewImageForArgo
 
 __all__ = [
     'PadMultiViewImage', 'NormalizeMultiviewImage', 
     'PhotoMetricDistortionMultiViewImage', 'CustomDefaultFormatBundle3D', 'CustomCollect3D', 'RandomScaleImageMultiViewImage',
     'LoadMultiViewImageFromFilesForAv2', 'ResizeMultiViewImageForArgo', 'GenerateBEVSegmentationForArgo'
-    'GenerateBEVSegmentationForNusc', 'GenerateUVSegmentationForNusc'
+    'GenerateBEVSegmentationForNusc', 'GenerateUVSegmentationForNusc', 'PadMultiViewImageForArgo', 'CropFrontViewImageForArgo'
 ]
