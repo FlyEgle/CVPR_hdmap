@@ -157,13 +157,22 @@ model = dict(
             embed_dims=_dim_,
             bev_seg_head=bev_seg_head,      #  bev-seg-head
             with_se=True,
+            
+            time_post_process=dict(        # 时序
+                type='CustomResNet',
+                numC_input=_dim_,
+                num_layer=[1,],
+                num_channels=[_dim_,],
+                stride=[1,],
+                backbone_output_ids=[1,]),
+
             time_pre_process=dict(        # 时序
                 type='CustomResNet',
                 numC_input=_dim_ * queue_length,
                 num_layer=[2,],
                 num_channels=[_dim_,],
                 stride=[1,],
-                backbone_output_ids=[0,]),
+                backbone_output_ids=[1,]),
 
             encoder=dict(
                 type='BEVFormerEncoder',
@@ -391,7 +400,7 @@ lr_config = dict(
 total_epochs = 24
 # total_epochs = 50
 # evaluation = dict(interval=1, pipeline=test_pipeline)
-evaluation = dict(interval=1, pipeline=test_pipeline, metric='chamfer')
+evaluation = dict(interval=2, pipeline=test_pipeline, metric='chamfer')
 
 runner = dict(type='EpochBasedRunner', max_epochs=total_epochs)
 
@@ -408,7 +417,7 @@ log_config = dict(
             init_kwargs=dict(
                 project='For Time',
                 entity='cvpr_hdmap',
-                name='load_t2_r50-bs2_lr3e-4_x8')
+                name='post-load_t2_r50-bs2_lr3e-4_x8')
         ),
     ])
 fp16 = dict(loss_scale=512.)

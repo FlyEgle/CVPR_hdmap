@@ -89,6 +89,7 @@ class MapTRPerceptionTransformer(BaseModule):
                  with_se=False,
 
                  time_pre_process=None,
+                 time_post_process=None,
                  **kwargs):
         super(MapTRPerceptionTransformer, self).__init__(**kwargs)
         self.encoder = build_transformer_layer_sequence(encoder)
@@ -127,6 +128,8 @@ class MapTRPerceptionTransformer(BaseModule):
         from mmdet.models import builder
         self.time_pre_process = \
             builder.build_backbone(time_pre_process)
+        
+        self.time_post_process = builder.build_backbone(time_post_process)
 
         self.with_prev = True
 
@@ -360,15 +363,23 @@ class MapTRPerceptionTransformer(BaseModule):
         dtype = bev_embed.dtype
         bev_seg = None
 
-
+        bev_feature = bev_embed.permute(0,2, 1).reshape(B, C, bev_h, bev_w)
         if self.with_prev is True:      # 在前几个 epoch时，encoder不稳定，此时不融合
             bev_feat_list = prev_bev
-            bev_feature = bev_embed.permute(0,2, 1).reshape(B, C, bev_h, bev_w)
-            bev_feat_list.append(bev_feature)
-            bev_feat = torch.cat(bev_feat_list, dim=1)
-            bev_feat = self.time_pre_process(bev_feat)    # 返回的是 list
+        else:
+            bev_feat_list = [ torch.zeros_like(bev_feature) for _ in range(1)]      # 这里先这样改, 后序再修改这部分
 
-            bev_embed = bev_feat[0].flatten(2).permute(0, 2, 1)     # 还原回去
+        bev_feat_list.append(bev_feature)
+        bev_feat_process = []
+        for bev_feat_single in bev_feat_list:
+            post_bev = self.time_post_process(bev_feat_single)
+            bev_feat_process.append(post_bev[0])
+     
+        bev_feat = torch.cat(bev_feat_process, dim=1)
+        bev_feat = self.time_pre_process(bev_feat)    # 返回的是 list
+      
+        bev_embed = bev_feat[0].flatten(2).permute(0, 2, 1)     # 还原回去
+
         if self.bev_seg_head is not None:           # bev-seg-head
             bev_feature = bev_embed.permute(0,2, 1).reshape(B, C, bev_h, bev_w)
             bev_seg = self.bev_seg_head([bev_feature])
