@@ -55,7 +55,7 @@ _num_levels_ = 1
 # bev_w_ = 100
 bev_h_ = 100
 bev_w_ = 200
-queue_length = 2 # each sequence contains `queue_length` frames.
+queue_length = 3 # each sequence contains `queue_length` frames.
 
 bev_seg_head=dict(
         type='DeepLabV3CustomHead',
@@ -323,7 +323,7 @@ data = dict(
         type=dataset_type,
         data_root=data_root,
         ann_file='./data/train_annotations.json',
-        ann_file_s3='./data/openlanev2_av2_train_infos_v0.1.pkl',
+        #ann_file_s3='./data/openlanev2_av2_train_infos_v0.1.pkl',
         # ann_file=data_root + 'nuscenes_infos_temporal_train.pkl',
         map_ann_file = data_root + "train_annotations.json",
         out_ann_file = None,
@@ -345,7 +345,7 @@ data = dict(
     val=dict(type=dataset_type,
             data_root=data_root,
             ann_file='./data/val_annotations.json',
-            ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
+            #ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
              map_ann_file=data_root + 'val_annotations.json',
              out_ann_file = data_root + 'av2_map_anns_val.json',
             #  map_ann_file=data_root + 'nuscenes_map_anns_val.json',
@@ -360,7 +360,7 @@ data = dict(
     test=dict(type=dataset_type,
               data_root=data_root,
             ann_file='./data/val_annotations.json',
-            ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
+            #ann_file_s3='./data/openlanev2_av2_val_infos_v0.1.pkl',
               map_ann_file=data_root + 'val_annotations.json',
             #   map_ann_file=data_root + 'nuscenes_map_anns_val.json',
               pipeline=test_pipeline, bev_size=(bev_h_, bev_w_),
@@ -400,7 +400,7 @@ lr_config = dict(
 total_epochs = 24
 # total_epochs = 50
 # evaluation = dict(interval=1, pipeline=test_pipeline)
-evaluation = dict(interval=2, pipeline=test_pipeline, metric='chamfer')
+evaluation = dict(interval=4, pipeline=test_pipeline, metric='chamfer')
 
 runner = dict(type='EpochBasedRunner', max_epochs=total_epochs)
 
@@ -417,7 +417,7 @@ log_config = dict(
             init_kwargs=dict(
                 project='For Time',
                 entity='cvpr_hdmap',
-                name='post-load_t2_r50-bs2_lr3e-4_x8')
+                name='post-s8_t3_r50-bs2_lr3e-4_x8')
         ),
     ])
 fp16 = dict(loss_scale=512.)
@@ -430,7 +430,7 @@ find_unused_parameters=True
 custom_hooks = [
     dict(
         type='SequentialControlHook',
-        temporal_start_epoch=2,
+        temporal_start_epoch=8,
     ),
 ]
 

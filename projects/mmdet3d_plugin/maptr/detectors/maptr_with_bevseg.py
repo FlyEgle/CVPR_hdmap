@@ -186,7 +186,7 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
     def obtain_history_bev(self, imgs_queue, img_metas_list):
         """Obtain history BEV features iteratively. To save GPU memory, gradients are not calculated.
         """
-        self.eval()
+        # self.eval()
         prev_bev_list = []
         with torch.no_grad():
             prev_bev = None
@@ -335,7 +335,7 @@ class MapTRWithBevSeg(MVXTwoStageDetector):
         if self.pts_bbox_head.transformer.with_prev is True:
             prev_bev = self.obtain_history_bev(prev_img, prev_img_metas) if len_queue>1 else None
             prev_bev = self.align_bev_feature(prev_img_metas, prev_bev)
-        self.train()
+        # self.train()
         img.requires_grad = True
 
         img_metas = [each[len_queue-1] for each in img_metas]

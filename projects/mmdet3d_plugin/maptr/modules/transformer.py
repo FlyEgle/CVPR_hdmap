@@ -367,7 +367,7 @@ class MapTRPerceptionTransformer(BaseModule):
         if self.with_prev is True:      # 在前几个 epoch时，encoder不稳定，此时不融合
             bev_feat_list = prev_bev
         else:
-            bev_feat_list = [ torch.zeros_like(bev_feature) for _ in range(1)]      # 这里先这样改, 后序再修改这部分
+            bev_feat_list = [ torch.zeros_like(bev_feature) for _ in range(2)]      # 这里先这样改, 后序再修改这部分
 
         bev_feat_list.append(bev_feature)
         bev_feat_process = []
