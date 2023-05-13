@@ -81,26 +81,30 @@ bev_seg_head=dict(
             ]
     )
 
+# please install mmcls>=0.22.0
+# import mmcls.models to trigger register_module in mmcls
+custom_imports = dict(imports=['mmcls.models'], allow_failed_imports=False)
+checkpoint_file = 'https://download.openmmlab.com/mmclassification/v0/convnext/convnext-large_3rdparty_in21k_20220124-41b5a79f.pth'  # noqa
 
 model = dict(
     type='MapTRWithBevSeg',
     use_grid_mask=True,
     video_test_mode=False,
-    # pretrained=dict(img='ckpts/resnet101_8xb32_in1k_20210831-539c63f8.pth'),
-    pretrained=dict(img='ckpts/resnet101-5d3b4d8f.pth'),
 
     img_backbone=dict(
-        type='ResNet',
-        depth=101,
-        num_stages=4,
-        out_indices=(3,),
-        frozen_stages=1,
-        norm_cfg=dict(type='BN', requires_grad=False),
-        norm_eval=True,
-        style='pytorch'),
+        # _delete_=True,
+        type='mmcls.ConvNeXt',
+        arch='large',
+        out_indices=[3,],
+        drop_path_rate=0.5,
+        layer_scale_init_value=1.0,
+        gap_before_final_norm=False,
+        init_cfg=dict(
+            type='Pretrained', checkpoint=checkpoint_file,
+            prefix='backbone.')), 
     img_neck=dict(
         type='FPN',
-        in_channels=[2048],
+        in_channels=[1536],
         out_channels=_dim_,
         start_level=0,
         add_extra_convs='on_output',
@@ -426,17 +430,17 @@ log_config = dict(
         # dict(type='AddSegmentationLogVarHook', var_dict='sdf'),
 
         # dict(type='TensorboardLoggerHook'),
-        dict(
-            type='WandbLoggerHook', 
-            init_kwargs=dict(
-                project='For test',
-                entity='cvpr_hdmap',
-                # name='onlySeg_deeplabv3_dice4_ce0.1_bs2_lr3e-4_x8')
-                # name='se_bev-uv_deeplabv3_dice15_ce0.5_bs2_lr3e-4_x8')
-                # name='se-catCoords-process_bev-uv_deeplabv3_dice15_ce0.5_bs2_lr3e-4_x8')    
-                # name='se-cat-process_bev-uv_deeplabv3_dice15_ce0.5_bs2_lr3e-4_x8')
-                name='r101_110e_2048x1550x0.5_bs2_lr3e-4_x8')
-        ),
+        # dict(
+        #     type='WandbLoggerHook', 
+        #     init_kwargs=dict(
+        #         project='For test',
+        #         entity='cvpr_hdmap',
+        #         # name='onlySeg_deeplabv3_dice4_ce0.1_bs2_lr3e-4_x8')
+        #         # name='se_bev-uv_deeplabv3_dice15_ce0.5_bs2_lr3e-4_x8')
+        #         # name='se-catCoords-process_bev-uv_deeplabv3_dice15_ce0.5_bs2_lr3e-4_x8')    
+        #         # name='se-cat-process_bev-uv_deeplabv3_dice15_ce0.5_bs2_lr3e-4_x8')
+        #         name='r101_110e_2048x1550x0.5_bs2_lr3e-4_x8')
+        # ),
     ])
 fp16 = dict(loss_scale=512.)
 checkpoint_config = dict(interval=5)
