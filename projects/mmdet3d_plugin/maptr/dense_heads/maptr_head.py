@@ -196,7 +196,7 @@ class MapTRHead(DETRHead):
     
     # @auto_fp16(apply_to=('mlvl_feats'))
     @force_fp32(apply_to=('mlvl_feats', 'prev_bev'))
-    def forward(self, mlvl_feats, lidar_feat, img_metas, prev_bev=None,  only_bev=False):
+    def forward(self, mlvl_feats, img_metas, prev_bev=None,  only_bev=False):
         """Forward function.
         Args:
             mlvl_feats (tuple[Tensor]): Features from the upstream
@@ -215,7 +215,6 @@ class MapTRHead(DETRHead):
 
         bs, num_cam, _, _, _ = mlvl_feats[0].shape
         dtype = mlvl_feats[0].dtype
-        # import pdb;pdb.set_trace()
         if self.query_embed_type == 'all_pts':
             object_query_embeds = self.query_embedding.weight.to(dtype)
         elif self.query_embed_type == 'instance_pts':
@@ -227,11 +226,9 @@ class MapTRHead(DETRHead):
         bev_mask = torch.zeros((bs, self.bev_h, self.bev_w),
                                device=bev_queries.device).to(dtype)
         bev_pos = self.positional_encoding(bev_mask).to(dtype)
-
         if only_bev:  # only use encoder to obtain BEV features, TODO: refine the workaround
             return self.transformer.get_bev_features(
                 mlvl_feats,
-                lidar_feat,
                 bev_queries,
                 self.bev_h,
                 self.bev_w,
@@ -244,7 +241,6 @@ class MapTRHead(DETRHead):
         else:
             outputs = self.transformer(
                 mlvl_feats,
-                lidar_feat,
                 bev_queries,
                 object_query_embeds,
                 self.bev_h,
@@ -258,7 +254,7 @@ class MapTRHead(DETRHead):
                 prev_bev=prev_bev
         )
 
-        bev_embed, hs, init_reference, inter_references = outputs
+        bev_embed, hs, init_reference, inter_references, bev_seg = outputs
         hs = hs.permute(0, 2, 1, 3)
         outputs_classes = []
         outputs_coords = []
@@ -304,7 +300,8 @@ class MapTRHead(DETRHead):
             'all_pts_preds': outputs_pts_coords,
             'enc_cls_scores': None,
             'enc_bbox_preds': None,
-            'enc_pts_preds': None
+            'enc_pts_preds': None,
+            'bev_seg': bev_seg,
         }
 
         return outs
@@ -753,6 +750,5 @@ class MapTRHead(DETRHead):
             pts = preds['pts']
 
             ret_list.append([bboxes, scores, labels, pts])
-
         return ret_list
 

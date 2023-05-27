@@ -141,3 +141,10 @@ dmypy.json
 .pyre/
 
 cluster.sh
+
+
+wandb/
+
+nohup.out
+draw_gt/
+submisson_vector.json

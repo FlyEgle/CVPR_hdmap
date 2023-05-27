@@ -1,8 +1,10 @@
 import copy
+from hashlib import pbkdf2_hmac
 
 import numpy as np
 from mmdet.datasets import DATASETS
 from mmdet3d.datasets import NuScenesDataset
+from mmdet3d.datasets.pipelines import Compose
 import mmcv
 import os
 from os import path as osp
@@ -19,6 +21,7 @@ from .nuscenes_dataset import CustomNuScenesDataset
 from nuscenes.map_expansion.map_api import NuScenesMap, NuScenesMapExplorer
 from nuscenes.eval.common.utils import quaternion_yaw, Quaternion
 from shapely import affinity, ops
+# MultiPolygon Shapely库中的MultiPolygon类只能表示不相交的多边形，不能表示相交或包含关系的多边形
 from shapely.geometry import LineString, box, MultiPolygon, MultiLineString
 from mmdet.datasets.pipelines import to_tensor
 import json
@@ -488,7 +491,7 @@ class LiDARInstanceLines(object):
         return instances_tensor
 
 
-
+# vectorized the local map 
 class VectorizedLocalMap(object):
     CLASS2LABEL = {
         'road_divider': 0,
@@ -527,6 +530,9 @@ class VectorizedLocalMap(object):
             self.nusc_maps[loc] = NuScenesMap(dataroot=self.data_root, map_name=loc)
             self.map_explorer[loc] = NuScenesMapExplorer(self.nusc_maps[loc])
 
+        print(self.nusc_maps)  
+        # import pdb;pdb.set_trace() 
+
         self.patch_size = patch_size
         self.sample_dist = sample_dist
         self.num_samples = num_samples
@@ -534,24 +540,29 @@ class VectorizedLocalMap(object):
         self.fixed_num = fixed_ptsnum_per_line
         self.padding_value = padding_value
 
+    # main interface
     def gen_vectorized_samples(self, location, lidar2global_translation, lidar2global_rotation):
         '''
         use lidar2global to get gt map layers
         '''
         
-        map_pose = lidar2global_translation[:2]
+        map_pose = lidar2global_translation[:2]   # lidar2global translation
         rotation = Quaternion(lidar2global_rotation)
 
         patch_box = (map_pose[0], map_pose[1], self.patch_size[0], self.patch_size[1])
-        patch_angle = quaternion_yaw(rotation) / np.pi * 180
+        patch_angle = quaternion_yaw(rotation) / np.pi * 180  # lidar2global rotation -> angle
         vectors = []
         for vec_class in self.vec_classes:
             if vec_class == 'divider':
                 line_geom = self.get_map_geom(patch_box, patch_angle, self.line_classes, location)
+                # line_geom 2 dict 
                 line_instances_dict = self.line_geoms_to_instances(line_geom)     
-                for line_type, instances in line_instances_dict.items():
+                for line_type, instances in line_instances_dict.items(): # dict->list->instance
                     for instance in instances:
+                        # import pdb;pdb.set_trace()
+                        # translate instance - label
                         vectors.append((instance, self.CLASS2LABEL.get(line_type, -1)))
+                # import pdb;pdb.set_trace()
             elif vec_class == 'ped_crossing':
                 ped_geom = self.get_map_geom(patch_box, patch_angle, self.ped_crossing_classes, location)
                 ped_instance_list = self.ped_poly_geoms_to_instances(ped_geom)
@@ -586,15 +597,20 @@ class VectorizedLocalMap(object):
         return anns_results
 
     def get_map_geom(self, patch_box, patch_angle, layer_names, location):
+        """Returns map geom include LineString or Polygon
+        """
         map_geom = []
         for layer_name in layer_names:
-            if layer_name in self.line_classes:
+            if layer_name in self.line_classes:      # ['road_divider', 'lane_divider']
+                # List[LineString] 
                 geoms = self.get_divider_line(patch_box, patch_angle, layer_name, location)
                 map_geom.append((layer_name, geoms))
-            elif layer_name in self.polygon_classes:
+            elif layer_name in self.polygon_classes:  # ['road_segment', 'lane']
+                # List[MutilPolygon] is same with the ped_crossing
                 geoms = self.get_contour_line(patch_box, patch_angle, layer_name, location)
                 map_geom.append((layer_name, geoms))
-            elif layer_name in self.ped_crossing_classes:
+            elif layer_name in self.ped_crossing_classes: # ['ped_crossing']
+                # List[MutilPolygon]
                 geoms = self.get_ped_crossing_line(patch_box, patch_angle, location)
                 map_geom.append((layer_name, geoms))
         return map_geom
@@ -771,6 +787,7 @@ class VectorizedLocalMap(object):
 
         return self._one_type_line_geom_to_vectors(results)
 
+    # this is the same with the pedcrossing
     def get_contour_line(self,patch_box,patch_angle,layer_name,location):
         if layer_name not in self.map_explorer[location].map_api.non_geometric_polygon_layers:
             raise ValueError('{} is not a polygonal layer'.format(layer_name))
@@ -783,6 +800,7 @@ class VectorizedLocalMap(object):
         records = getattr(self.map_explorer[location].map_api, layer_name)
 
         polygon_list = []
+        # no use 
         if layer_name == 'drivable_area':
             for record in records:
                 polygons = [self.map_explorer[location].map_api.extract_polygon(polygon_token) for polygon_token in record['polygon_tokens']]
@@ -797,7 +815,7 @@ class VectorizedLocalMap(object):
                         if new_polygon.geom_type is 'Polygon':
                             new_polygon = MultiPolygon([new_polygon])
                         polygon_list.append(new_polygon)
-
+        # go
         else:
             for record in records:
                 polygon = self.map_explorer[location].map_api.extract_polygon(record['polygon_token'])
@@ -815,31 +833,60 @@ class VectorizedLocalMap(object):
 
         return polygon_list
 
+    # divider line
     def get_divider_line(self,patch_box,patch_angle,layer_name,location):
+        # print(self.map_explorer[location].map_api.non_geometric_line_layers)
         if layer_name not in self.map_explorer[location].map_api.non_geometric_line_layers:
             raise ValueError("{} is not a line layer".format(layer_name))
 
         if layer_name is 'traffic_light':
             return None
 
+        # import pdb; pdb.set_trace()
+
         patch_x = patch_box[0]
         patch_y = patch_box[1]
 
-        patch = self.map_explorer[location].get_patch_coord(patch_box, patch_angle)
-
+        patch = self.map_explorer[location].get_patch_coord(patch_box, patch_angle)  # return shapely result
+        # import pdb;pdb.set_trace()
+        # location is a city map
         line_list = []
         records = getattr(self.map_explorer[location].map_api, layer_name)
         for record in records:
-            line = self.map_explorer[location].map_api.extract_line(record['line_token'])
+            line = self.map_explorer[location].map_api.extract_line(record['line_token'])  # return LINESTRING type
             if line.is_empty:  # Skip lines without nodes.
                 continue
-
+            
+            # find current token from the pose & anchor & width_meters & height_meters , search one which is not empty 
             new_line = line.intersection(patch)
             if not new_line.is_empty:
+                # 它可以将一个几何对象绕着指定的旋转中心点旋转指定的角度
                 new_line = affinity.rotate(new_line, -patch_angle, origin=(patch_x, patch_y), use_radians=False)
+                # 函数对一个多边形对象进行平移、旋转和缩放操作
+                # 运行上述代码，将会输出变换后的多边形对象。可以看到，该函数将多边形对象沿 x 轴左移 patch_x 个单位，沿 y 轴下移patch_y 个单位，生成了一个新的几何对象。
                 new_line = affinity.affine_transform(new_line,
                                                      [1.0, 0.0, 0.0, 1.0, -patch_x, -patch_y])
                 line_list.append(new_line)
+        # import pdb;pdb.set_trace()
+        # print("line_list: ", line_list)
+        # line 
+        # print(layer_name)
+        """
+        [
+            (-11.734935264193155, -22.590480698839883), 
+            (-8.354879955581055, -22.642544986301573), 
+            (-6.81645487762853, -22.620699614539035), 
+            (-5.486408556754668, -22.505075298117163), 
+            (-4.523510096874816, -22.196329377040684), 
+            (-3.776878125131134, -21.634295623912976), 
+            (-3.4226623161948737, -20.889562173966397), 
+            (-3.0818364966571608, -19.93922860515363), 
+            (-2.961082355317103, -18.96212750343807), 
+            (-2.713908965536575, -17.56947678757365), 
+            (-1.9700417902390654, 24.05870276394694), 
+            (-1.8776003797115663, 28.690359685652083), 
+            (-2.0727411836210194, 30.000000000000682)]
+        """
 
         return line_list
 
@@ -863,6 +910,7 @@ class VectorizedLocalMap(object):
                     if new_polygon.geom_type is 'Polygon':
                         new_polygon = MultiPolygon([new_polygon])
                     polygon_list.append(new_polygon)
+        # print("polygon_list", polygon_list)
 
         return polygon_list
 
@@ -895,7 +943,7 @@ class VectorizedLocalMap(object):
 
         return sampled_points, num_valid
 
-
+# ====================================== main dataset ====================================
 @DATASETS.register_module()
 class CustomNuScenesLocalMapDataset(CustomNuScenesDataset):
     r"""NuScenes Dataset.
@@ -915,6 +963,7 @@ class CustomNuScenesLocalMapDataset(CustomNuScenesDataset):
                  map_classes=None,
                  noise='None',
                  noise_std=0,
+                 custom_data_pipeline=None,
                  *args, 
                  **kwargs):
         super().__init__(*args, **kwargs)
@@ -924,7 +973,7 @@ class CustomNuScenesLocalMapDataset(CustomNuScenesDataset):
         self.overlap_test = overlap_test
         self.bev_size = bev_size
 
-        self.MAPCLASSES = self.get_map_classes(map_classes)
+        self.MAPCLASSES = self.get_map_classes(map_classes)  # ['divider', 'ped_crossing','boundary']
         self.NUM_MAPCLASSES = len(self.MAPCLASSES)
         self.pc_range = pc_range
         patch_h = pc_range[4]-pc_range[1]
@@ -933,13 +982,20 @@ class CustomNuScenesLocalMapDataset(CustomNuScenesDataset):
         self.padding_value = padding_value
         self.fixed_num = fixed_ptsnum_per_line
         self.eval_use_same_gt_sample_num_flag = eval_use_same_gt_sample_num_flag
+
+        # vectorized the location map for nuscense
         self.vector_map = VectorizedLocalMap(kwargs['data_root'], 
                             patch_size=self.patch_size, map_classes=self.MAPCLASSES, 
                             fixed_ptsnum_per_line=fixed_ptsnum_per_line,
                             padding_value=self.padding_value)
+        
         self.is_vis_on_test = False
         self.noise = noise
         self.noise_std = noise_std
+        self.custom_data_pipeline = custom_data_pipeline
+        if self.custom_data_pipeline is not None:
+            self.custom_data_pipeline = Compose(self.custom_data_pipeline)
+    
     @classmethod
     def get_map_classes(cls, map_classes=None):
         """Get class names of current dataset.
@@ -990,8 +1046,12 @@ class CustomNuScenesLocalMapDataset(CustomNuScenesDataset):
         lidar2global_rotation = list(Quaternion(matrix=lidar2global).q)
 
         location = input_dict['map_location']
+        # import pdb; pdb.set_trace()
         ego2global_translation = input_dict['ego2global_translation']
         ego2global_rotation = input_dict['ego2global_rotation']
+
+
+        # vectorized samples
         anns_results = self.vector_map.gen_vectorized_samples(location, lidar2global_translation, lidar2global_rotation)
         
         '''
@@ -1039,6 +1099,8 @@ class CustomNuScenesLocalMapDataset(CustomNuScenesDataset):
         self.pre_pipeline(input_dict)
         example = self.pipeline(input_dict)
         example = self.vectormap_pipeline(example,input_dict)
+        if self.custom_data_pipeline is not None:
+            example = self.custom_data_pipeline(example)
         if self.filter_empty_gt and \
                 (example is None or ~(example['gt_labels_3d']._data != -1).any()):
             return None
@@ -1111,10 +1173,10 @@ class CustomNuScenesLocalMapDataset(CustomNuScenesDataset):
         """
         info = self.data_infos[index]
         # standard protocal modified from SECOND.Pytorch
+        # print("info keys: ", info.keys())
         input_dict = dict(
             sample_idx=info['token'],
-            # pts_filename=info['lidar_path'],
-            lidar_path=info["lidar_path"],
+            pts_filename=info['lidar_path'],
             sweeps=info['sweeps'],
             ego2global_translation=info['ego2global_translation'],
             ego2global_rotation=info['ego2global_rotation'],
@@ -1125,9 +1187,10 @@ class CustomNuScenesLocalMapDataset(CustomNuScenesDataset):
             scene_token=info['scene_token'],
             can_bus=info['can_bus'],
             frame_idx=info['frame_idx'],
-            timestamp=info['timestamp'],
+            timestamp=info['timestamp'] / 1e6,
             map_location = info['map_location'],
         )
+        # import pdb;pdb.set_trace()
         # lidar to ego transform
         lidar2ego = np.eye(4).astype(np.float32)
         lidar2ego[:3, :3] = Quaternion(info["lidar2ego_rotation"]).rotation_matrix
@@ -1143,6 +1206,7 @@ class CustomNuScenesLocalMapDataset(CustomNuScenesDataset):
             for cam_type, cam_info in info['cams'].items():
                 image_paths.append(cam_info['data_path'])
                 # obtain lidar to image transformation matrix
+                # lidar2cam
                 lidar2cam_r = np.linalg.inv(cam_info['sensor2lidar_rotation'])
                 lidar2cam_t = cam_info[
                     'sensor2lidar_translation'] @ lidar2cam_r.T
@@ -1202,7 +1266,6 @@ class CustomNuScenesLocalMapDataset(CustomNuScenesDataset):
         can_bus[-2] = patch_angle / 180 * np.pi
         can_bus[-1] = patch_angle
 
-
         lidar2ego = np.eye(4)
         lidar2ego[:3,:3] = Quaternion(input_dict['lidar2ego_rotation']).rotation_matrix
         lidar2ego[:3, 3] = input_dict['lidar2ego_translation']
@@ -1227,6 +1290,8 @@ class CustomNuScenesLocalMapDataset(CustomNuScenesDataset):
         example = self.pipeline(input_dict)
         if self.is_vis_on_test:
             example = self.vectormap_pipeline(example, input_dict)
+            if self.custom_data_pipeline is not None:
+                example = self.custom_data_pipeline(example)
         return example
 
     def __getitem__(self, idx):

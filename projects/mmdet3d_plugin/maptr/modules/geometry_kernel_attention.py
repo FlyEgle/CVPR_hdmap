@@ -32,7 +32,8 @@ class GeometrySptialCrossAttention(BaseModule):
 
     def __init__(self,
                  embed_dims=256,
-                 num_cams=6,
+                #  num_cams=6, nuscens
+                 num_cams = 7, # av2
                  pc_range=None,
                  dropout=0.1,
                  init_cfg=None,

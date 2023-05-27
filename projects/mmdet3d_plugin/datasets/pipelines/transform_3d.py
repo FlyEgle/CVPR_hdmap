@@ -3,6 +3,8 @@ from numpy import random
 import mmcv
 from mmdet.datasets.builder import PIPELINES
 from mmcv.parallel import DataContainer as DC
+import cv2
+from mmdet.datasets.pipelines import to_tensor
 
 @PIPELINES.register_module()
 class PadMultiViewImage(object):
@@ -39,6 +41,39 @@ class PadMultiViewImage(object):
         results['pad_shape'] = [img.shape for img in padded_img]
         results['pad_fixed_size'] = self.size
         results['pad_size_divisor'] = self.size_divisor
+
+
+        # # ===== 可视化
+        # import cv2
+        # import os
+        # for index, img in enumerate(results['img']):
+        #     img = np.uint8(img)
+        #     # img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        #     lidar2img = results['lidar2img'][index]
+
+        #     for instance in results['ann_info']['gt_instance_xyz_list']:
+        #         # instance = np.concatenate([instance, np.zeros((instance.shape[0], 1))], axis=1) 
+        #         instance = np.concatenate([instance, np.ones((instance.shape[0], 1))], axis=1)
+        #         instance = instance @ lidar2img.T
+        #         instance = instance[instance[:, 2] > 1e-5]
+
+        #         # if xyz1.shape[0] == 0:
+        #         #     continue
+        #         points_2d = instance[:, :2] / instance[:, 2:3]
+        #         # mask = (points_2d[:, 0] >= 0) & (points_2d[:, 0] < image.shape[1]) & (points_2d[:, 1] >= 0) & (points_2d[:, 1] < image.shape[0])
+        #         points_2d = points_2d.astype(int)
+                
+        #         img = cv2.polylines(img, points_2d[None], False, (0, 255, 0), 2)
+
+        #     # mmcv.mkdir_or_exist('instance_draw')
+        #     # import os
+        #     # cv2.imwrite(os.path.join('instance_draw', f'{index}.png'), img)
+        #     CAM_TYPE = ['ring_front_center', 'ring_front_right', 'ring_front_left', 'ring_rear_right', 'ring_rear_left', 'ring_side_right', 'ring_side_left']
+        #     dir = f"../padding_img/{results['scene_token']}/{results['sample_idx']}"
+        #     mmcv.mkdir_or_exist(dir)
+        #     cv2.imwrite(os.path.join(dir, f"{CAM_TYPE[index]}.png" ), img)
+
+
 
     def __call__(self, results):
         """Call function to pad images, masks, semantic segmentation maps.
@@ -224,7 +259,7 @@ class CustomCollect3D(object):
         - 'img_norm_cfg': a dict of normalization information:
             - mean: per channel mean subtraction
             - std: per channel std divisor
-            - to_rgb: bool indicating if bgr was converted to rgb
+            - to_rgb: bool indicating if bgr was converted to rgbf
         - 'pcd_trans': point cloud transformations
         - 'sample_idx': sample index
         - 'pcd_scale_factor': point cloud scale factor
@@ -251,7 +286,8 @@ class CustomCollect3D(object):
                             'pcd_scale_factor', 'pcd_rotation', 'pts_filename',
                             'transformation_3d_flow', 'scene_token',
                             'can_bus','lidar2global',
-                            'camera2ego','camera_intrinsics','img_aug_matrix','lidar2ego'
+                            'camera2ego','camera_intrinsics','img_aug_matrix','lidar2ego',
+                            'cam_extrinsics'
                             )):
         self.keys = keys
         self.meta_keys = meta_keys
@@ -330,26 +366,318 @@ class RandomScaleImageMultiViewImage(object):
         return repr_str
 
 
+
+
+
 @PIPELINES.register_module()
-class CustomPointsRangeFilter:
-    """Filter points by the range.
+class GenerateUVSegmentationForArgo(object):
+
+    def __init__(self, thickness=10):
+        self.thickness = thickness
+
+    def _generate_uvsegmentation(self, results):
+        """generate uvsegmentation."""
+        gt_uvsegmentations = []
+        for img in results['img']:
+            gt_uvsegmentation = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
+
+        for index, img in enumerate(results['img']):
+            gt_uvsegmentation = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
+            lidar2img = results['lidar2img'][index]
+            for instance in results['ann_info']['gt_instance_xyz_list']:
+                # instance = np.concatenate([instance, np.zeros((instance.shape[0], 1))], axis=1) 
+                instance = np.concatenate([instance, np.ones((instance.shape[0], 1))], axis=1)
+               
+                instance = instance @ lidar2img.T
+                instance = instance[instance[:, 2] > 1e-5]
+                points_2d = instance[:, :2] / instance[:, 2:3]
+                points_2d = points_2d.astype(int)
+                
+                gt_uvsegmentation = cv2.polylines(gt_uvsegmentation, points_2d[None], False, (255, 255, 255), thickness=self.thickness)
+
+            # # 过滤掉 padding 的那部分区域 
+            # gt_uvsegmentation[results['before_pad_shape'][index][0]:] = 0
+            # gt_uvsegmentation[:, results['before_pad_shape'][index][1]:] =0
+            gt_uvsegmentation = gt_uvsegmentation.astype(np.float64)
+            gt_uvsegmentation = gt_uvsegmentation / 255.0 
+            gt_uvsegmentations.append(gt_uvsegmentation)
+            
+            # # # 可视化 gt_uvsegmentation 
+            # import os
+            # CAM_TYPE = ['ring_front_center', 'ring_front_left', 'ring_front_right', 'ring_rear_left', 'ring_rear_right', 'ring_side_left', 'ring_side_right']
+            # dir = f"../gt_uvsegmentations_raw/{results['scene_token']}/{results['sample_idx']}"
+            # mmcv.mkdir_or_exist(dir)
+            # cv2.imwrite(os.path.join(dir, f"{CAM_TYPE[index]}.png" ), gt_uvsegmentation)
+
+        results['gt_uvsegmentations'] = DC(to_tensor(gt_uvsegmentations), stack=True) 
+
+        # results['gt_uvsegmentations'] = gt_uvsegmentations
+       
+    def __call__(self, results):
+        """Call function to generate uvsegmentation gt for aux-head-loss.
+        Args:
+            results (dict): Result dict from loading pipeline.
+        Returns:
+            dict: Updated result dict.
+        """
+        self._generate_uvsegmentation(results)
+        return results
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__
+        repr_str += f'thickness={self.thickness}, '
+        return repr_str
+
+
+from shapely.geometry import LineString, box
+import cv2
+from mmdet.datasets.pipelines import to_tensor
+from mmcv.parallel import DataContainer as DC
+@PIPELINES.register_module()
+class GenerateBEVSegmentationForArgo(object):
+    """GenerateBEVSegmentationForArgo.
+
+   GenerateBEVSegmentationForArgo.
+
     Args:
-        point_cloud_range (list[float]): Point cloud range.
+        map_size (list, optional):
+            Defaults to [(-50, 50), (-25, 25)].
+        bev_size (tuple, optional): (bev_size_h, bev_size_w).
+            Defaults to (100, 200).
+        thickness (int, optional): thickness for drawing SDMap path.
+            Defaults to 2.
     """
 
-    def __init__(self, point_cloud_range):
-        self.pcd_range = np.array(point_cloud_range, dtype=np.float32)
+    def __init__(self,
+                 map_size=[(-30, 30), (-15, 15)],  # [(min_h, max_h), (min_w, max_w)]
+                 bev_size=(100, 200),  # H, W
+                 thickness=2, 
+              ):
+        self.bev_size = bev_size
+        # 注意这里 除的顺序
+        self.scale = ((map_size[0][1] - map_size[0][0]) / bev_size[1], (map_size[1][1] - map_size[1][0]) / bev_size[0]) 
+        self.map_size = map_size
+        self.patch_size = box(map_size[0][0], map_size[1][0], map_size[0][1], map_size[1][1])   # (x_min, y_min, x_max, y_max)
 
-    def __call__(self, data):
-        """Call function to filter points by the range.
+        self.thickness = thickness
+
+
+    def __call__(self, results):
+        """Call function to load multiple types annotations.
+
         Args:
-            data (dict): Result dict from loading pipeline.
+            results (dict): Result dict from :obj:`mmdet3d.CustomDataset`.
+
         Returns:
-            dict: Results after filtering, 'points', 'pts_instance_mask' \
-                and 'pts_semantic_mask' keys are updated in the result dict.
+            dict: The dict containing loaded SDMap Pts and Patch.
         """
-        points = data["points"]
-        points_mask = points.in_range_3d(self.pcd_range)
-        clean_points = points[points_mask]
-        data["points"] = clean_points
-        return data
+        gt_instances = results['ann_info']['gt_instance_xyz_list']
+        bev_map_patch = np.zeros(self.bev_size, dtype=np.uint8)
+        bev_map_lines = []
+        
+        for pts in gt_instances:
+            new_pts = LineString(pts[:,:2])
+            new_pts = new_pts.intersection(self.patch_size)
+            if new_pts.geom_type == 'MultiLineString':
+                for new_pts_single in new_pts.geoms:
+                    if new_pts_single.length == 0.0:
+                        continue
+                    line = (np.asarray(list(new_pts_single.coords)) + np.array([self.map_size[0][1], self.map_size[1][1]])) / self.scale
+                    line = line.astype(np.int)
+
+                    cv2.polylines(bev_map_patch, line[None], False, (255, 255, 255), thickness=self.thickness)
+
+            elif new_pts.length != 0.0:
+                line = (np.asarray(list(new_pts.coords)) + np.array([self.map_size[0][1], self.map_size[1][1]])) / self.scale
+                line = line.astype(np.int)
+              
+                cv2.polylines(bev_map_patch, line[None], False, (255, 255, 255), thickness=self.thickness)
+        
+        bev_map_patch = cv2.flip(bev_map_patch, 0)
+
+        # # 可视化
+        # vis_dir = '../vis_sdmap/'
+        # mmcv.mkdir_or_exist(vis_dir)
+        # import os
+        # cv2.imwrite(os.path.join(vis_dir, f"{results['sample_idx']}.png"), bev_map_patch)
+      
+        bev_map_patch = bev_map_patch.astype(np.float)
+        bev_map_patch /= bev_map_patch.max()
+        results['gt_bevsegmentations'] = DC(to_tensor([bev_map_patch]), stack=True) 
+        return results
+
+
+    def __repr__(self):
+        """str: Return a string that describes the module."""
+        indent_str = '    '
+        repr_str = self.__class__.__name__ + '(\n'
+        repr_str += f'{indent_str}map_size={self.map_size}, '
+        repr_str += f'{indent_str}bev_size={self.bev_size}, '
+        repr_str += f'{indent_str}scale={self.scale}, '
+        repr_str += f'{indent_str}thickness={self.thickness}, '
+        return repr_str
+
+
+
+@PIPELINES.register_module()
+class GenerateBEVSegmentationForNusc(object):
+    """GenerateBEVSegmentationForNuscenes.
+
+   GenerateBEVSegmentationForNuscenes.
+
+    Args:
+        map_size (list, optional):
+            Defaults to [(-50, 50), (-25, 25)].
+        bev_size (tuple, optional): (bev_size_h, bev_size_w).
+            Defaults to (100, 200).
+        thickness (int, optional): thickness for drawing SDMap path.
+            Defaults to 2.
+    """
+
+    def __init__(self,
+                 map_size=[(-15, 15), (-30, 30)],  # [(min_h, max_h), (min_w, max_w)]
+                 bev_size=(200, 100),  # H, W
+                 thickness=2, 
+              ):
+        self.bev_size = bev_size
+        # 注意这里 除的顺序
+        self.scale = ((map_size[0][1] - map_size[0][0]) / bev_size[1], (map_size[1][1] - map_size[1][0]) / bev_size[0]) 
+        self.map_size = map_size
+        self.patch_size = box(map_size[0][0], map_size[1][0], map_size[0][1], map_size[1][1])   # (x_min, y_min, x_max, y_max)
+
+        self.thickness = thickness
+
+
+    def __call__(self, results):
+        """Call function to load multiple types annotations.
+
+        Args:
+            results (dict): Result dict from :obj:`mmdet3d.CustomDataset`.
+
+        Returns:
+            dict: The dict containing loaded SDMap Pts and Patch.
+        """
+        gt_instances = results['gt_bboxes_3d']._data.instance_list
+        bev_map_patch = np.zeros(self.bev_size, dtype=np.uint8)
+        bev_map_lines = []
+        
+        for new_pts in gt_instances:
+
+            line = (np.asarray(list(new_pts.coords)) + np.array([self.map_size[0][1], self.map_size[1][1]])) / self.scale
+            line = line.astype(np.int)
+            
+            cv2.polylines(bev_map_patch, line[None], False, (255, 255, 255), thickness=self.thickness)
+        
+        bev_map_patch = cv2.flip(bev_map_patch, 0)
+
+        # # 可视化
+        # vis_dir = '../vis_sdmap/'
+        # mmcv.mkdir_or_exist(vis_dir)
+        # import os
+        # cv2.imwrite(os.path.join(vis_dir, f"{results['img_metas']._data['sample_idx']}.png"), bev_map_patch)
+      
+        bev_map_patch = bev_map_patch.astype(np.float)
+        bev_map_patch /= bev_map_patch.max()
+        results['gt_bevsegmentations'] = DC(to_tensor([bev_map_patch]), stack=True) 
+        return results
+
+
+    def __repr__(self):
+        """str: Return a string that describes the module."""
+        indent_str = '    '
+        repr_str = self.__class__.__name__ + '(\n'
+        repr_str += f'{indent_str}map_size={self.map_size}, '
+        repr_str += f'{indent_str}bev_size={self.bev_size}, '
+        repr_str += f'{indent_str}scale={self.scale}, '
+        repr_str += f'{indent_str}thickness={self.thickness}, '
+        return repr_str
+
+
+@PIPELINES.register_module()
+class GenerateUVSegmentationForNusc(object):
+
+    def __init__(self, thickness=10):
+        self.thickness = thickness
+
+    def _generate_uvsegmentation(self, results):
+        """generate uvsegmentation."""
+    
+        gt_uvsegmentations = []
+        for index, img in enumerate(results['img']._data):
+            gt_uvsegmentation = np.zeros((img.shape[1], img.shape[2]), dtype=np.uint8)
+            lidar2img = results['img_metas']._data['lidar2img'][index]
+            for instance in results['gt_bboxes_3d']._data.instance_list:
+                instance = np.asarray(list(instance.coords))
+                instance = np.concatenate([instance, np.zeros((instance.shape[0], 1))], axis=1)     # 由于 gt是xy, 因此这里需要补充z，会带来一定误差 
+                instance = np.concatenate([instance, np.ones((instance.shape[0], 1))], axis=1)
+               
+                instance = instance @ lidar2img.T
+                instance = instance[instance[:, 2] > 1e-5]
+                points_2d = instance[:, :2] / instance[:, 2:3]
+                points_2d = points_2d.astype(int)
+                
+                gt_uvsegmentation = cv2.polylines(gt_uvsegmentation, points_2d[None], False, (255, 255, 255), thickness=self.thickness)
+
+            # # 过滤掉 padding 的那部分区域 
+            # gt_uvsegmentation[results['before_pad_shape'][index][0]:] = 0
+            # gt_uvsegmentation[:, results['before_pad_shape'][index][1]:] =0
+            gt_uvsegmentation = gt_uvsegmentation.astype(np.float64)
+            gt_uvsegmentation = gt_uvsegmentation / 255.0 
+            gt_uvsegmentations.append(gt_uvsegmentation)
+            
+            # # # 可视化 gt_uvsegmentation 
+            # import os
+            # CAM_TYPE = ['CAM_FRONT', 'CAM_FRONT_RIGHT', 'CAM_FRONT_LEFT', 'CAM_BACK', 'CAM_BACK_LEFT', 'CAM_BACK_RIGHT']
+            # dir = f"../gt_uvsegmentations_raw/{results['img_metas']._data['sample_idx']}"
+            # mmcv.mkdir_or_exist(dir)
+            # cv2.imwrite(os.path.join(dir, f"{CAM_TYPE[index]}.png" ), gt_uvsegmentation)
+
+        results['gt_uvsegmentations'] = DC(to_tensor(gt_uvsegmentations), stack=True) 
+        # # ===== 可视化到uv下
+        # import cv2
+        # import os
+        # import copy
+        # for index, img in enumerate(results['img']._data):
+        #     img = copy.deepcopy(img)
+        #     img = img.cpu().permute(1, 2, 0).numpy()
+        #     img = np.uint8(img)
+        #     img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        #     lidar2img = results['img_metas']._data['lidar2img'][index]
+        #     for instance in results['gt_bboxes_3d']._data.instance_list:
+        #         instance = np.asarray(list(instance.coords))
+        #         instance = np.concatenate([instance, np.ones((instance.shape[0], 1))  * -8.0], axis=1)     # 由于 gt是xy，因此需要补充z(0) 
+        #         instance = np.concatenate([instance, np.ones((instance.shape[0], 1))], axis=1)
+        #         instance = instance @ lidar2img.T
+        #         instance = instance[instance[:, 2] > 1e-5]
+
+        #         # if xyz1.shape[0] == 0:
+        #         #     continue
+        #         points_2d = instance[:, :2] / instance[:, 2:3]
+        #         # mask = (points_2d[:, 0] >= 0) & (points_2d[:, 0] < image.shape[1]) & (points_2d[:, 1] >= 0) & (points_2d[:, 1] < image.shape[0])
+        #         points_2d = points_2d.astype(int)
+                
+        #         img = cv2.polylines(img, points_2d[None], False, (0, 255, 0), 2)
+
+        #     mmcv.mkdir_or_exist('instance_draw')
+        #     import os
+        #     cv2.imwrite(os.path.join('instance_draw', f'{index}.png'), img)
+        #     CAM_TYPE = ['CAM_FRONT', 'CAM_FRONT_RIGHT', 'CAM_FRONT_LEFT', 'CAM_BACK', 'CAM_BACK_LEFT', 'CAM_BACK_RIGHT']      
+        #     dir = f"../padding_img/{results['img_metas']._data['sample_idx']}"
+        #     mmcv.mkdir_or_exist(dir)
+        #     cv2.imwrite(os.path.join(dir, f"{CAM_TYPE[index]}.png" ), img)
+
+       
+    def __call__(self, results):
+        """Call function to generate uvsegmentation gt for aux-head-loss.
+        Args:
+            results (dict): Result dict from loading pipeline.
+        Returns:
+            dict: Updated result dict.
+        """
+        self._generate_uvsegmentation(results)
+        return results
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__
+        repr_str += f'thickness={self.thickness}, '
+        return repr_str

@@ -211,6 +211,7 @@ class MapTRNMSFreeCoder(BaseBBoxCoder):
         cls_scores = cls_scores.sigmoid()
         scores, indexs = cls_scores.view(-1).topk(max_num)
         labels = indexs % self.num_classes
+        
         bbox_index = indexs // self.num_classes
         bbox_preds = bbox_preds[bbox_index]
         pts_preds = pts_preds[bbox_index]
@@ -253,6 +254,8 @@ class MapTRNMSFreeCoder(BaseBBoxCoder):
                 'labels': labels,
                 'pts': pts,
             }
+
+            # print("predict_dict: ", predictions_dict)
 
         else:
             raise NotImplementedError(
