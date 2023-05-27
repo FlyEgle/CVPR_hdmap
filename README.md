@@ -27,7 +27,7 @@ python tools/maptr/vis_pred_av2.py config_path ckpt_path
 
 ## Note
 - Image proces: Src image resize to (1550x2048) ---> scale(0.5) ---->  775x1024 ---> padding ---> 800x1024
-- 由于盛银使用集群读取图片，因此其他人在使用时需要将 `ann_file_s3` 注释掉
+-  `ann_file_s3` may be comments， if you read the dataset form local
 
 
 
